@@ -265,7 +265,6 @@ async function main() {
   renderCalendars();
   zh();
   const { first, last } = nearestArchiveDate();
-  $('#coverage').textContent = `版本 ${APP_VERSION}`;
   render();
   if (navigator.serviceWorker && navigator.serviceWorker.register && location.protocol !== 'file:') try {
     navigator.serviceWorker.register('sw.js').then((reg) => {
