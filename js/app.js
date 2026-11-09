@@ -1,10 +1,8 @@
 import { loadData, office, dayInfo, HOURS, dateLabel, nearestArchiveDate, invitPsalms, setCalendar, calendarList, currentCalendar } from './office.js';
 import { fromIso, iso, WD } from './calendar.js';
 import { initTTS, stop as stopTTS } from './tts.js';
-import { loadBlessings, renderIndex as blessIndex, renderChapter as blessChapter } from './blessings.js';
-import { loadMissal, missalLoaded, massesFor, defaults as massDefaults, renderMass as massHtml, optionsPanel, massTitle } from './missal.js';
 
-const APP_VERSION = 'v39（彌撒試用版）';   // keep in step with VERSION in sw.js
+const APP_VERSION = 'v41';   // keep in step with VERSION in sw.js
 const $ = (s) => document.querySelector(s);
 const store = { get(k, d) { try { const v = localStorage.getItem('rike.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('rike.' + k, JSON.stringify(v)); } catch {} } };
@@ -17,7 +15,7 @@ function defaultHour() {
 const S = { date: hkToday(), hour: defaultHour(), choice: {}, sub: store.get('sub', '午時'), inv: store.get('inv', '95'), alt: store.get('alt', {}) };
 
 function parseHash() {
-  const m = location.hash.match(/^#\/(\d{4}-\d\d-\d\d)?\/?([\dmbr])?(?:\?c=([\w@-]*))?/);
+  const m = location.hash.match(/^#\/(\d{4}-\d\d-\d\d)?\/?(\d)?(?:\?c=([\w@]*))?/);
   if (m) { if (m[1]) S.date = m[1]; if (m[2]) S.hour = m[2]; if (m[3] !== undefined) S.choice[S.date] = m[3]; }
 }
 function setHash() {
@@ -67,8 +65,9 @@ function renderLine(l, ctx = {}) {
   // the sentence under a psalm title (「…」(希3:13)); quoted words inside a psalm stay psalm text
   if ((/^「.*」/.test(l) && (/[（(][^（）()]*\d[^（）()]*[）)]\s*$/.test(l) || /^(聖詠|聖歌|讚主曲|西默盎|匝加利亞|聖母謝主曲)/.test(ctx.prev || ''))) || /^（[^）]*）$/.test(l)) return `<p class="epi">${esc(l)}</p>`;
   if (l.length < 40 && /^(聖詠|聖歌|讚主曲|西默盎|匝加利亞|聖母謝主曲|\(路)/.test(l)) return `<p class="ps">${esc(l)}</p>`;
-  if (/^(恭讀|選讀)/.test(l) && l.length < 60) return `<p class="rd">${esc(l)}</p>`;
-  if (/^(對答詠|領：|答：)/.test(l)) return `<p>${esc(l)}</p>`;
+  if (/^(恭讀|選讀|續讀)/.test(l) && (l.length < 60 || (ctx.k === 'r2' && l.length < 200 && !/[。！？]/.test(l)))) return `<p class="rd">${esc(l)}</p>`;
+  if ((m = l.match(/^(對答詠)(?:[\s\u3000]+(.*))?$/))) return `<h2 class="sh">${m[1]}</h2>` + (m[2] ? `<p class="rd">${esc(m[2])}</p>` : '');   // label red, Bible reference black   // same header style as 開端詞、讚美詩、聖詠吟唱、誦讀一、誦讀二、讚主詩
+  if (/^(領：|答：)/.test(l)) return `<p>${esc(l)}</p>`;
   let cls = '';
   if (VERSE.has(ctx.k)) cls = MARK_END.test(l) ? '' : 've';
   else if (ctx.k === 'hymn') cls = /[。；！？」]\s*$/.test(l) ? 've' : '';
@@ -76,9 +75,24 @@ function renderLine(l, ctx = {}) {
   return `<p${cls ? ` class="${cls}"` : ''}>${marks(l)}</p>`;
 }
 // a canticle that follows the responsory in the same section (夜禱: 西默盎聖歌) is set out verse by verse
+// 禱詞 (晨禱／晚禱): the people's response is shown once, after the introduction; each petition then ends with 【答】 instead of repeating it
+function compactInterc(lines) {
+  const seen = new Set(), out = [];
+  for (let l of lines) {
+    l = l.replace(/\s*［眾］\s*$/, '【答】');   // one text writes ［眾］ after each petition instead of repeating the response
+    if (/^眾\s*[：:]/.test(l)) {
+      const key = l.replace(/\s+/g, '');
+      if (seen.has(key)) { if (out.length && !/【答】$/.test(out[out.length - 1])) out[out.length - 1] += '【答】'; continue; }
+      seen.add(key);
+    }
+    out.push(l);
+  }
+  return out;
+}
 function renderLines(lines, s) {
+  if (s.k === 'interc') lines = compactInterc(lines);
   let ctx = { ...s, st: {} };
-  return lines.map((l, i) => { if (!VERSE.has(ctx.k) && l.length < 40 && /^(西默盎|聖母謝主曲|匝加利亞)/.test(l)) ctx = { ...ctx, k: 'gospel' }; return renderLine(l, { ...ctx, prev: lines[i - 1] }); }).join('');
+  return lines.map((l, i) => { if (!VERSE.has(ctx.k) && l.length < 40 && /^(西默盎|聖母謝主曲|匝加利亞)/.test(l)) ctx = { ...ctx, k: 'gospel' }; return renderLine(l, { ...ctx, prev: lines[i - 1] }); }).join('').replace(/【答】/g, '<span class="spk">【答】</span>');
 }
 const tabs = (attr, items, cur) => `<div class="tabs" role="tablist">${items.map(([v, lab]) => `<button class="pill" role="tab" ${attr}="${v}" aria-pressed="${v === cur}">${esc(lab)}</button>`).join('')}</div>`;
 
@@ -106,6 +120,13 @@ function renderInvit(s) {
   return `<section class="s-invit">${h}${antTabs}${tabs('data-inv', ['95', '100', '67', '24'].map((k) => [k, lab[k]]), S.inv)}${out.map((l) => renderLine(l, s)).join('')}${body.map((l) => l.startsWith('§') ? `<p class="ps">${esc(l.slice(1))}</p>` : l.startsWith('¶') ? `<p>${marks(l.slice(1))}</p>` : l.startsWith('¤') ? `<p class="epi">${esc(l.slice(1))}</p>` : renderLine(l, s)).join('')}</section>`;
 }
 
+// 誦讀一／二: only the label is red; the source that follows (恭讀 / 選讀 …) is black, same style as the line under the header
+function secHead(s, tag) {
+  const m = (s.k === 'r1' || s.k === 'r2') && s.h && s.h.match(/^(誦讀[一二])[\s\u3000]+(.+)$/);
+  if (!m) return `<h2 class="sh">${esc(s.h)}${tag ? ` <span class="tag">${esc(tag)}</span>` : ''}</h2>`;
+  return `<h2 class="sh">${m[1]}${tag ? ` <span class="tag">${esc(tag)}</span>` : ''}</h2>` + (/^(恭讀|選讀|續讀)/.test(m[2]) ? `<p class="rd">${esc(m[2])}</p>` : `<p class="epi">${esc(m[2])}</p>`);
+}
+
 function renderSection(s, hour) {
   if (hour === '2' && s.sub && s.sub !== S.sub) return '';
   if (s.k === 'invit') { const r = renderInvit(s); if (r) return r; }
@@ -123,7 +144,7 @@ function renderSection(s, hour) {
     const pick = blocks.find((b) => b.h.startsWith(S.sub)) || blocks[0];
     lines = pick ? pick.l : lines;
   }
-  const h = s.h && !/^(午前|午時|午後)/.test(s.h) ? `<h2 class="sh">${esc(s.h)}${s.tag ? ` <span class="tag">${esc(s.tag)}</span>` : ''}</h2>` : '';
+  const h = s.h && !/^(午前|午時|午後)/.test(s.h) ? secHead(s, s.tag) : '';
   return `<section class="s-${s.k}">${h}${renderLines(lines, s)}</section>`;
 }
 
@@ -143,7 +164,7 @@ function renderCelebs(info) {
       `<button class="opt" role="radio" data-c="${c.id}" aria-checked="${c.id === cur}"><span class="dot" aria-hidden="true">${c.id === cur ? '◉' : '○'}</span><span>${esc(c.title)} <small>${labOf(c)}</small></span></button>`).join('')}</div>`);
   }
   el.innerHTML = parts.join('');
-  el.querySelectorAll('button.opt').forEach((b) => b.onclick = () => { S.choice[S.date] = b.dataset.c; store.set('mass.' + S.date, null); render(); });
+  el.querySelectorAll('button.opt').forEach((b) => b.onclick = () => { S.choice[S.date] = b.dataset.c; render(); });
 }
 
 function render() {
@@ -153,13 +174,6 @@ function render() {
   const [y, m, d] = S.date.split('-').map(Number);
   $('#dateLabel').textContent = `${y}年${m}月${d}日`;
   $('#datePick').value = S.date;
-  const book = BOOK_OF(S.hour);
-  $('#books').innerHTML = BOOKS.map((b) => `<button role="tab" data-b="${b.id}" aria-selected="${b.id === book}">${b.name}</button>`).join('');
-  $('#books').querySelectorAll('button').forEach((b) => b.onclick = () => { S.hour = b.dataset.b === 'h' ? (S.lastHour || defaultHour()) : b.dataset.b; render(); window.scrollTo(0, 0); });
-  $('#celebs').style.display = book === 'b' || book === 'r' ? 'none' : '';
-  $('.bar').classList.toggle('nodate', book === 'b' || book === 'r');
-  if (book !== 'h') { $('#hours').innerHTML = ''; $('#hours').style.display = 'none'; if (book === 'm') renderCelebs(info); renderBook(book, info); setHash(); return; }
-  $('#hours').style.display = ''; S.lastHour = S.hour;
   renderCelebs(info);
   $('#hours').innerHTML = HOURS.map((h) => `<button role="tab" data-h="${h.n}" aria-selected="${h.n === S.hour}">${h.short}</button>`).join('');
   $('#hours').querySelectorAll('button').forEach((b) => b.onclick = () => { S.hour = b.dataset.h; render(); window.scrollTo(0, 0); });
@@ -183,66 +197,8 @@ function render() {
   setHash();
   const cal = currentCalendar();
   if (cal === 'tw') retext('#office h1, #celebs', /周/g, '週');            // 台灣用「週」
-  if (cal !== 'hk' && cal !== 'mo') retext('#office', /亞孟/g, '阿門');      // 港澳用「亞孟」，其他用「阿門」
+  if (cal !== 'hk' && cal !== 'mo') retext('#office', /亞孟/g, '阿們');      // 港澳用「亞孟」，其他用「阿們」
   zh($('header') || document.body); zh($('#office')); zh($('#celebs') || document.body);
-}
-
-// ---------- 彌撒 / 祝福禮典 / 聖事禮典 ----------
-const BOOKS = [{ id: 'h', name: '時辰頌禱' }, { id: 'm', name: '彌撒' }, { id: 'b', name: '祝福禮典' }, { id: 'r', name: '聖事禮典' }];
-const BOOK_OF = (h) => (['m', 'b', 'r'].includes(h) ? h : 'h');
-async function renderBook(book, info) {
-  const el = $('#office');
-  if (book === 'b') {
-    if (!S.bLoaded) { el.innerHTML = '<p class="loading">載入祝福禮典…</p>'; try { await loadBlessings(); S.bLoaded = true; } catch (e) { el.innerHTML = '<p class="empty">未能載入祝福禮典。</p>'; return; } if (BOOK_OF(S.hour) !== 'b') return; }
-    const chap = store.get('bchap', '');
-    el.innerHTML = chap ? blessChapter(chap) : blessIndex(S.bq || '');
-    const go = (c, sec) => { store.set('bchap', c); render(); if (sec) setTimeout(() => { const t = document.getElementById(sec); if (t) t.scrollIntoView(); }, 30); else window.scrollTo(0, 0); };
-    el.querySelectorAll('[data-chap]').forEach((a) => a.onclick = (e) => { e.preventDefault(); go(a.dataset.chap, a.dataset.sec); });
-    el.querySelectorAll('[data-jump]').forEach((x) => x.onclick = () => { const t = document.getElementById(x.dataset.jump); if (t) t.scrollIntoView({ behavior: 'smooth' }); });
-    el.querySelectorAll('[data-b="index"]').forEach((x) => x.onclick = (e) => { e.preventDefault(); store.set('bchap', ''); render(); window.scrollTo(0, 0); });
-    el.querySelectorAll('[data-b="print"]').forEach((x) => x.onclick = () => window.print());
-    const q = el.querySelector('[data-b="search"]');
-    if (q) q.oninput = () => { S.bq = q.value; const pos = q.selectionStart; render(); const q2 = $('#office [data-b="search"]'); if (q2) { q2.focus(); q2.setSelectionRange(pos, pos); } };
-    zh(el); return;
-  }
-  if (book === 'r') {
-    el.innerHTML = `<h1>聖事禮典</h1><div class="notes"><p>籌備中，來源仍在搜集。</p></div><p>將收錄：聖洗聖事（成人、兒童）、堅振聖事、婚姻聖事、修和聖事、病人傅油及臨終聖體、殯葬禮。在彌撒中舉行的禮儀，可直接加入「彌撒」的經文編排。</p>`;
-    zh(el); return;
-  }
-  if (!missalLoaded()) { el.innerHTML = '<p class="loading">載入彌撒經文…</p>'; try { await loadMissal(); } catch (e) { el.innerHTML = '<p class="empty">未能載入彌撒經文。</p>'; return; } if (BOOK_OF(S.hour) !== 'm') return; }
-  const list = massesFor(info, S.choice[S.date] || '');
-  if (!list.list.length) { el.innerHTML = '<p class="empty">此日彌撒經文尚未收錄。</p>'; return; }
-  const saved = store.get('mass.' + S.date, null);
-  const all = [...list.list, ...list.more];
-  const cur = (saved && all.find((m) => m.id === saved.mass)) || list.list[0];
-  const def = massDefaults(info, cur, S.date);
-  const st = saved && saved.mass === cur.id ? { ...def, ...saved } : { ...def, mass: cur.id };
-  const save = () => store.set('mass.' + S.date, st);
-  el.innerHTML = `${list.list.length > 1 || cur !== list.list[0] ? `<h1 class="mtitle">${esc(cur.label)}</h1>` : ''}${optionsPanel(info, list, cur, st, S.date)}<div class="mass">${massHtml(info, cur, st, S.date)}</div>`;
-  el.querySelectorAll('select[data-ms]').forEach((x) => x.onchange = () => {
-    const k = x.dataset.ms, v = x.value;
-    if (k === 'mass') { store.set('mass.' + S.date, { mass: v }); render(); return; }
-    if (k === 'gloria' || k === 'dead') st[k] = v === '1';
-    else if (k === 'ep' || k === 'bless') st[k] = v;
-    else if (k === 'pf') st.pf = (v === 'p' || v === 'ep2') ? v : +v;
-    else st[k] = +v;
-    if (k === 'ep' && v !== 'II' && st.pf === 'ep2') st.pf = massDefaults(info, cur, S.date).pf;
-    save(); const y = window.scrollY; render(); window.scrollTo(0, y);
-  });
-  const pan = el.querySelector('details.mpanel');
-  if (pan) pan.addEventListener('toggle', () => { store.set('massPanelClosed', !pan.open); });
-  if (pan && store.get('massPanelClosed', false)) pan.open = false;
-  el.querySelectorAll('button[data-m]').forEach((b) => b.onclick = () => {
-    const [k, a, c] = b.dataset.m.split(':');
-    if (k === 'reset') { store.set('mass.' + S.date, null); render(); return; }
-    if (k === 'print') { window.print(); return; }
-    if (k === 'rs') { st.rs = +a; st.alt = {}; }
-    if (k === 'alt') { st.alt = { ...(st.alt || {}), [a]: +c }; }
-    save(); const y = window.scrollY; render(); window.scrollTo(0, y);
-  });
-  const cal = currentCalendar();
-  if (cal !== 'hk' && cal !== 'mo') retext('#office', /亞孟/g, '阿門');
-  zh(el); zh($('#celebs'));
 }
 
 function retext(sel, re, to) {
@@ -280,7 +236,7 @@ async function main() {
   applyPrefs();
   $('#prev').onclick = () => shift(-1);
   $('#next').onclick = () => shift(1);
-  $('#today').onclick = () => { S.date = hkToday(); if (BOOK_OF(S.hour) === 'h') S.hour = defaultHour(); render(); };
+  $('#today').onclick = () => { S.date = hkToday(); S.hour = defaultHour(); render(); };
   $('#datePick').onchange = (e) => { if (e.target.value) { S.date = e.target.value; render(); } };
   $('#menuBtn').onclick = () => { $('#settings').hidden = false; };
   $('#closeSettings').onclick = () => { $('#settings').hidden = true; };
