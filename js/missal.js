@@ -1,5 +1,5 @@
-// 彌撒 — Mass builder for 常頌 SEMPER.
-// Picks the day's Mass from the liturgical calendar (via office.js dayInfo) and assembles
+// 彌撒 — Mass builder for OBLATIO.
+// Picks the day's Mass from the liturgical calendar (via liturgy.js dayInfo) and assembles
 // the Order of Mass with the chosen texts into one continuous text, from the entrance antiphon to the dismissal.
 import { WD } from './calendar.js';
 
@@ -186,6 +186,7 @@ class Out {
   h3(t, tag) { this.h.push(`<h3 class="m-h">${esc(t)}${tag ? ` <span class="tag">${esc(tag)}</span>` : ''}</h3>`); }
   rub(t, cls = '') { this.h.push(`<p class="rub ${cls}">${inl(t)}</p>`); }
   raw(h) { this.h.push(h); }
+  cons(x) { this.h.push(`<p class="m-cons">${x.split('\n').map(inl).join('<br>')}</p>`); }   // Words of Consecration: bold, +2px
   say(sp, x, cls = '') {
     const parts = []; let last = 0, cur = sp;
     x.replace(SPK, (m, who, off) => { if (off > 0) parts.push([cur, x.slice(last, off)]); else if (!cur) cur = who; cur = who; last = off + m.length; return m; });
@@ -196,6 +197,7 @@ class Out {
     for (const b of bs) {
       if (b.t === 'h') { if (/^(主祭|可由|可省|可)/.test(b.x)) this.rub(b.x); else this.h3(b.x); }
       else if (b.t === 'r') this.rub(b.x);
+      else if (b.t === 'c') this.cons(b.x);
       else this.say(b.sp || '', b.x);
     }
   }
@@ -223,9 +225,15 @@ function renderReading(o, it) {
     o.say('執事或主祭', '願主與你們同在。', SUP); o.say('信友', '也與你的心靈同在。', SUP);
     o.say('執事或主祭', book + '。', SUP); o.say('信友', '主，願祢受讚美。', SUP);
   } else o.h3(it.head.replace(/^(答唱詠)[　\s]*/, '$1　'));
+  // "——上主的話" is set at the end of the reading's last line; the dialogue and （默想片刻） are not shown
+  const lines = [];
   for (const l of it.lines) {
+    if (/^（默想片刻）$/.test(l)) continue;
+    if (/^——上主的話/.test(l)) { if (lines.length) lines[lines.length - 1] += '　——上主的話'; continue; }
+    lines.push(l);
+  }
+  for (const l of lines) {
     if (/^（.*）$/.test(l)) o.rub(l);
-    else if (/^——上主的話/.test(l)) { o.say(it.kind === '福音' ? '執事或主祭' : '讀經員', '上主的話。'); o.say('信友', it.kind === '福音' ? '基督，我們讚美祢。' : '感謝天主。', SUP); }
     else if (/^【答】/.test(l)) o.say('答', l.replace(/^【答】[：:]?\s*/, ''));
     else if (/^(領|眾)[：:]/.test(l)) o.raw(`<p class="m-p"><span class="spk">${l[0]}：</span>${inl(l.slice(2).replace(/【答】$/, '')).trim()}${/【答】$/.test(l) ? ' <span class="ri">【答】</span>' : ''}</p>`);
     else if (/^恭讀/.test(l)) { if (it.kind !== '福音') o.rub(l); }
@@ -275,6 +283,9 @@ function epBody(o, st, f, info) {
   }
 }
 
+/** 禱詞中的小字：「或」「或（國難時）」「（為教宗）」 */
+const isRub = (l) => l === '或' || /^或（.*）$/.test(l) || /^（[^）]{1,16}）$/.test(l);
+const firstSay = (L) => L.findIndex((l) => !isRub(l));
 export function renderMass(info, mass, st, dateStr) {
   const f = mass.f, T = info.L.temporal, O = M.ordo, o = new Out();
   if (f.special) return renderSpecial(f);
@@ -287,12 +298,12 @@ export function renderMass(info, mass, st, dateStr) {
   if (st.pen !== 2) { o.h3('上主，求祢垂憐'); o.blocks(O.kyrie.slice(1)); }
   if (st.gloria) { o.h3('光榮頌'); o.blocks(O.gloria.filter((b) => !/^按禮規/.test(b.x))); }
   o.h3('集禱經'); o.say('主祭', '請大家祈禱。（合掌）'); o.rub('全體默禱片刻。主祭伸手誦念集禱經：');
-  arr(f.collect).forEach((l, i) => (l === '或' ? o.rub('或') : o.say(i === 0 ? '主祭' : '', l)));
+  arr(f.collect).forEach((l, i) => (isRub(l) ? o.rub(l) : o.say(i === firstSay(arr(f.collect)) ? '主祭' : '', l)));
 
   o.sec('聖道禮儀');
   if (f.votive) {
     renderRawReadings(o, f.rb ? M.votive.rb[f.rb] : [], f);
-    o.h3('講道'); o.rub('（講道）', SUP); if (st.creed >= 0) { o.h3('信經'); o.blocks(O.creed[st.creed] || O.creed[0]); }
+    o.h3('講道'); if (st.creed >= 0) { o.h3('信經'); o.blocks(O.creed[st.creed] || O.creed[0]); }
     o.h3('信友禱文'); o.rub('（主祭邀請、意向及結束禱詞由團體按需要編寫）', SUP);
     return finishMass(o, f, st, info, O);
   }
@@ -308,7 +319,7 @@ export function renderMass(info, mass, st, dateStr) {
     if (sl.alts.length > 1) o.raw(`<div class="tabs">${sl.alts.map((a, j) => `<button class="pill" data-m="alt:${si}:${j}" aria-pressed="${j === ai}">${esc(sl.kind + (a.form ? '・' + a.form : '・' + '一二三四五六'[j]))}</button>`).join('')}</div>`);
     renderReading(o, sl.alts[ai]);
   });
-  o.h3('講道'); o.rub('（講道）', SUP);
+  o.h3('講道');
   if (st.creed >= 0) { o.h3('信經'); o.blocks(O.creed[st.creed] || O.creed[0]); }
   o.h3('信友禱文'); o.rub('（主祭邀請、意向及結束禱詞由團體按需要編寫）', SUP);
 
@@ -318,14 +329,14 @@ export function renderMass(info, mass, st, dateStr) {
 function finishMass(o, f, st, info, O) {
   o.sec('聖祭禮儀');
   o.blocks(O.offertory);
-  o.h3('獻禮經'); arr(f.offerings).forEach((l, i) => (l === '或' ? o.rub('或') : o.say(i === 0 ? '主祭' : '', l)));
+  o.h3('獻禮經'); arr(f.offerings).forEach((l, i) => (isRub(l) ? o.rub(l) : o.say(i === firstSay(arr(f.offerings)) ? '主祭' : '', l)));
   o.sec(EPS[st.ep]);
   epBody(o, st, f, info);
   o.sec('領主禮');
   const com = O.communion_rite;
   o.blocks(com.slice(1));
   if (f.communion && f.communion.length) { o.h3('領主詠'); f.communion.forEach((l) => (/^（.*）$/.test(l) || l === '或' ? o.rub(l) : o.say('', l))); }
-  o.h3('領主後經'); o.say('主祭', '請大家祈禱。'); arr(f.postcommunion).forEach((l, i) => (l === '或' ? o.rub('或') : o.say(i === 0 ? '主祭' : '', l)));
+  o.h3('領主後經'); o.say('主祭', '請大家祈禱。'); arr(f.postcommunion).forEach((l, i) => (isRub(l) ? o.rub(l) : o.say(i === firstSay(arr(f.postcommunion)) ? '主祭' : '', l)));
 
   o.sec('禮成式');
   const con = O.concluding, iD = con.findIndex((b) => b.t === 'h' && b.x === '遣散');
@@ -339,8 +350,7 @@ function finishMass(o, f, st, info, O) {
 }
 
 function renderRawReadings(o, lines, f) {
-  o.raw(`<div class="notes"><p>以下讀經選項取自《感恩祭典》（台灣地區主教團，1982）；「見（某）頁」指該書頁數，經文請用讀經集。</p></div>`);
-  if (!lines.length) { o.rub('（本彌撒讀經：見讀經集或當日讀經）'); return; }
+  if (!lines.length) { o.rub('（本彌撒讀經：按禮規選用）'); return; }
   for (const l of lines) {
     if (l.startsWith('§')) o.h3(l.slice(1));
     else if (/^\d{1,2}\s*\S/.test(l) && l.length < 60 && /[（(]/.test(l)) o.raw(`<p class="m-p ropt">${esc(l)}</p>`);
