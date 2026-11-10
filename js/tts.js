@@ -7,6 +7,18 @@ const SPEEDS = { slow: [0.6, '慢'], mid: [0.9, '中'] };   // no fast speed (Fr
 const NUM = '一二三四五六七八九十';
 let queue = [], pos = 0, playing = false, paused = false, store, $bar, $sheet, gen = 0;   // gen: ignore events of cancelled utterances
 let marks = [], startAt = 0;   // start points (sections; each psalm of the psalmody) and the one chosen
+const live = new Set();   // utterances being spoken: kept referenced, or Safari may drop them (and their end event)
+let tmr = 0;
+// iOS 27 / Safari 27: speech queued in the same moment as cancel() is dropped (it 'plays' with no sound).
+// So: cancel only if something is speaking, then wait a moment before speaking; otherwise speak at once (inside the tap).
+function restart() {
+  gen++; clearTimeout(tmr);
+  if (synth.speaking || synth.pending) {
+    synth.cancel(); live.clear();
+    const my = gen; tmr = setTimeout(() => { if (my === gen) speakNext(); }, 250);
+  } else speakNext();
+}
+function halt() { gen++; clearTimeout(tmr); if (synth && (synth.speaking || synth.pending)) synth.cancel(); live.clear(); }
 
 const speed = () => (SPEEDS[store.get('ttsSpeed', 'mid')] ? store.get('ttsSpeed', 'mid') : 'mid');
 const norm = (l) => (l || '').toLowerCase().replace('_', '-');
@@ -96,30 +108,31 @@ function speakNext() {
   u.lang = v ? v.lang : LANGS[lang].want[0];
   u.rate = SPEEDS[speed()][0];
   const my = ++gen;
-  u.onend = () => { if (my === gen && playing && !paused) { pos++; speakNext(); paintPos(); } };
-  u.onerror = () => { if (my === gen && playing && !paused) { pos++; speakNext(); paintPos(); } };
+  const done = () => { live.delete(u); if (my === gen && playing && !paused) { pos++; speakNext(); paintPos(); } };
+  u.onend = done; u.onerror = done;
+  live.add(u);
+  if (synth.paused) synth.resume();
   synth.speak(u);
   paintPos();
 }
 
 export function stop() {
-  gen++; playing = false; paused = false; queue = []; pos = 0; marks = []; startAt = 0;
-  if (synth) synth.cancel();
+  halt(); playing = false; paused = false; queue = []; pos = 0; marks = []; startAt = 0;
   document.querySelectorAll('#office .speaking').forEach((x) => x.classList.remove('speaking'));
   paint();
   if ($sheet && !$sheet.hidden) requestAnimationFrame(() => { if (!playing) { refresh(); paint(); } });   // the new text is on screen by then
 }
 function play() {
   if (!synth) return;
-  if (paused) { gen++; paused = false; synth.cancel(); speakNext(); paint(); return; }   // resume from the current paragraph
+  if (paused) { paused = false; restart(); paint(); return; }   // resume from the current paragraph
   const lang = store.get('ttsLang', 'yue');
   if (!voiceFor(lang) && synth.getVoices().length) noVoice(lang);
   if (!marks.length) refresh();
   if (!queue.length) return;
   pos = marks.length ? marks[startAt].i : 0; playing = true; paused = false;
-  gen++; synth.cancel(); speakNext(); paint();
+  restart(); paint();
 }
-function pause() { gen++; paused = true; synth.cancel(); paint(); }
+function pause() { paused = true; halt(); paint(); }
 function jump(d) {   // ⏮ / ⏭: previous / next start point
   if (!marks.length) refresh();
   if (!marks.length) return;
@@ -128,11 +141,11 @@ function jump(d) {   // ⏮ / ⏭: previous / next start point
   if (d < 0 && pos > marks[k].i + 1) d = 0;   // ⏮ in the middle of a part: back to its beginning
   k = Math.min(marks.length - 1, Math.max(0, k + d));
   if (d > 0 && k === markOf(pos)) return;
-  pos = marks[k].i; paused = false; gen++; synth.cancel(); speakNext(); paint();
+  pos = marks[k].i; paused = false; restart(); paint();
 }
 function startFrom(k) {
   startAt = k;
-  if (playing) { pos = marks[k].i; paused = false; gen++; synth.cancel(); speakNext(); }
+  if (playing) { pos = marks[k].i; paused = false; restart(); }
   paint();
 }
 
@@ -212,7 +225,7 @@ export function initTTS(st) {
         <li><b>Android：</b>設定 › 系統 › 語言 › 文字轉語音輸出 › 偏好的引擎 › 安裝語音數據（粵語／中文）。</li>
         <li><b>Mac：</b>系統設定 › 輔助使用 › 朗讀內容 › 系統聲音 › 管理聲音。</li>
         <li><b>Windows：</b>設定 › 時間與語言 › 語音 › 新增語音。</li></ul>
-        <p class="tts-fine">加入語音後，請重新開啟常頌。</p>
+        <p class="tts-fine">加入語音後，請重新開啟常頌。iPhone 如果有朗讀但沒有聲音，請檢查靜音開關及音量。</p>
       </details>
     </div>
     <p class="tts-msg" hidden></p>
@@ -240,11 +253,11 @@ export function initTTS(st) {
   sb.onclick = () => { const s = $sheet.querySelector('.tts-set'); s.hidden = !s.hidden; sb.setAttribute('aria-expanded', !s.hidden); };
   $sheet.querySelectorAll('[data-lang]').forEach((b) => b.onclick = () => {
     store.set('ttsLang', b.dataset.lang); $sheet.querySelector('.tts-msg').hidden = true; paint();
-    if (playing && !paused) { gen++; synth.cancel(); speakNext(); }
+    if (playing && !paused) { restart(); }
   });
   $sheet.querySelectorAll('[data-speed]').forEach((b) => b.onclick = () => {
     store.set('ttsSpeed', b.dataset.speed); paint();
-    if (playing && !paused) { gen++; synth.cancel(); speakNext(); }
+    if (playing && !paused) { restart(); }
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$sheet.hidden) close(); });
   document.body.classList.add('has-tts');
