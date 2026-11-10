@@ -1,9 +1,19 @@
-// 朗讀：用裝置內建的語音（Web Speech API）以粵語或普通話讀出當前時辰的經文。
-// 不經網絡、不收費；語音的質素取決於裝置（iPhone/iPad、Android、Mac、Windows 各有內建中文語音）。
+// 朗讀：粵語優先播放常頌錄製的語音（預先生成的音檔，存於 audio.attende.app；播放過的會保存在裝置）；
+// 未有音檔的段落及普通話，用裝置內建的語音（Web Speech API）。
 // 介面：底部小條（目前段落 + ⏮ ▶ ⏭）；按小條打開「朗讀」面板：語音說明、由哪一段開始、語言及速度。
 const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
 const LANGS = { yue: { label: '粵語', want: ['zh-HK', 'yue-HK', 'yue', 'zh-yue'] }, cmn: { label: '普通話', want: ['zh-TW', 'zh-CN', 'cmn-Hant-TW', 'cmn-Hans-CN', 'zh'] } };
-const SPEEDS = { slow: [0.6, '慢'], mid: [0.9, '中'] };   // no fast speed (Fr. Gervais, 9 Nov 2026)
+const SPEEDS = { slow: [0.6, '慢', 0.8], mid: [0.9, '中', 1.0] };   // [device voice rate, label, recorded audio rate]; no fast speed (Fr. Gervais, 9 Nov 2026)
+// recorded Cantonese audio: one mp3 per unit (a verse, an antiphon, a paragraph), named by a hash of its text
+const AUDIO = { base: 'https://audio.attende.app/yue/wl1/', gap: { verse: 650, end: 1200 } };
+// cyrb53: 53-bit hash of the unit text → 14 hex digits (the build uses the same function on the same text)
+function hash(str) {
+  let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
+  for (let i = 0; i < str.length; i++) { const c = str.charCodeAt(i); h1 = Math.imul(h1 ^ c, 2654435761); h2 = Math.imul(h2 ^ c, 1597334677); }
+  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
+  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
+  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(16).padStart(14, '0');
+}
 const NUM = '一二三四五六七八九十';
 let queue = [], pos = 0, playing = false, paused = false, store, $bar, $sheet, gen = 0;   // gen: ignore events of cancelled utterances
 let marks = [], startAt = 0;   // start points (sections; each psalm of the psalmody) and the one chosen
@@ -32,12 +42,13 @@ function audioOff() {
 // So: cancel only if something is speaking, then wait a moment before speaking; otherwise speak at once (inside the tap).
 function restart() {
   gen++; clearTimeout(tmr);
-  if (synth.speaking || synth.pending) { synth.cancel(); cancelledAt = Date.now(); live.clear(); }
+  if (au) au.pause();
+  if (synth && (synth.speaking || synth.pending)) { synth.cancel(); cancelledAt = Date.now(); live.clear(); }
   const wait = 250 - (Date.now() - cancelledAt);   // also right after a pause
   if (wait > 0) { const my = gen; tmr = setTimeout(() => { if (my === gen) speakNext(); }, wait); }
   else speakNext();
 }
-function halt() { gen++; clearTimeout(tmr); if (synth && (synth.speaking || synth.pending)) { synth.cancel(); cancelledAt = Date.now(); } live.clear(); }
+function halt() { gen++; clearTimeout(tmr); if (au) au.pause(); if (synth && (synth.speaking || synth.pending)) { synth.cancel(); cancelledAt = Date.now(); } live.clear(); }
 
 const speed = () => (SPEEDS[store.get('ttsSpeed', 'mid')] ? store.get('ttsSpeed', 'mid') : 'mid');
 const norm = (l) => (l || '').toLowerCase().replace('_', '-');
@@ -51,25 +62,42 @@ function voiceFor(lang) {
 }
 
 // what is read: the prayer texts; not rubrics, notes, headings, tabs, scripture references or the saint's bio
+// Units: the lines of a hymn or psalm verse (plain <p> lines up to the .ve line) are one unit, so the recorded
+// voice reads the verse as a sentence; every other paragraph (antiphon, versicle, prose) is a unit of its own.
+// Each unit: { el (first line), els, t (lines joined by \n), key, end (last unit of its section) }.
+function lineText(el) {
+  const c = el.cloneNode(true); c.querySelectorAll('.spk, .antl').forEach((x) => x.remove());
+  return c.textContent
+    .replace(/[※†＊*]/g, '')
+    .replace(/[（(][^（）()]*[0-9A-Za-z][^（）()]*[）)]/g, '')      // (希3:13)、(Nunc Dimittis)
+    .replace(/^[（(][一二三四五六七八九十]+[）)]/, '')               // （一）母后萬福 → 母后萬福
+    .replace(/祢/g, '你').replace(/祂/g, '他')                        // same sound; some voices do not know these forms
+    .replace(/\s+/g, '').trim();
+}
 function collect() {
-  const out = [];
-  for (const el of document.querySelectorAll('#office section > p')) {
-    if (el.closest('.bio') || el.matches('.rub, .epi, .ps, .part, .loading, .empty, .firsthour')) continue;
-    if (!el.offsetParent) continue;   // hidden (e.g. rubrics switched off)
-    if (out.some((x) => x.el === el)) continue;
-    const c = el.cloneNode(true); c.querySelectorAll('.spk, .antl').forEach((x) => x.remove());
-    let t = c.textContent
-      .replace(/[※†＊*]/g, '')
-      .replace(/[（(][^（）()]*[0-9A-Za-z][^（）()]*[）)]/g, '')      // (希3:13)、(Nunc Dimittis)
-      .replace(/祢/g, '你').replace(/祂/g, '他')                        // same sound; some voices do not know these forms
-      .replace(/\s+/g, '').trim();
-    if (!t) continue;
-    // long paragraphs in sentences (some browsers stop long utterances)
-    const parts = t.length > 120 ? t.match(/[^。！？；]+[。！？；」]*/g) || [t] : [t];
-    for (const p of parts) out.push({ el, t: p });
+  const out = []; let open = null;
+  const close = () => { if (open) { out.push(open); open = null; } };
+  for (const s of document.querySelectorAll('#office section')) {
+    if (s.matches('.bio')) continue;
+    for (const el of s.querySelectorAll(':scope > p')) {
+      if (el.matches('.rub, .epi, .ps, .part, .loading, .empty, .firsthour')) continue;
+      if (!el.offsetParent) continue;   // hidden (e.g. rubrics switched off, another tab)
+      const t = lineText(el);
+      if (!t) continue;
+      const verse = !el.className || el.classList.contains('ve');
+      if (verse) {
+        if (!open) open = { el, els: [], lines: [] };
+        open.els.push(el); open.lines.push(t);
+        if (el.classList.contains('ve')) close();
+      } else { close(); out.push({ el, els: [el], lines: [t] }); }
+    }
+    close();
+    if (out.length) out[out.length - 1].end = true;
   }
+  for (const u of out) { u.t = u.lines.join('\n'); u.key = hash(u.t); delete u.lines; }
   return out;
 }
+if (typeof window !== 'undefined') window.__ttsUnits = () => collect().map((u) => ({ key: u.key, t: u.t }));   // used by the audio build
 
 // start points: every section with something to read; in the psalmody each psalm/canticle (from its antiphon)
 const after = (a, b) => a === b || !!(b.compareDocumentPosition(a) & Node.DOCUMENT_POSITION_FOLLOWING);
@@ -111,29 +139,92 @@ function refresh() {   // re-read the screen (called when the panel opens and be
   startAt = marks.length ? markOf(Math.max(0, vis)) : 0;
 }
 
+// ---- recorded audio ----
+let au = null, auKey = '';                    // the one <audio> element (unlocked in the first tap) and the unit it holds
+const clips = new Map();                      // key → Promise<blob URL | null>
+const useAudio = () => store.get('ttsLang', 'yue') === 'yue' && typeof fetch !== 'undefined';
+function clip(key) {
+  if (!clips.has(key)) {
+    clips.set(key, fetch(AUDIO.base + key + '.mp3', { mode: 'cors' })
+      .then((r) => (r.ok ? r.blob() : null)).then((b) => (b && b.size ? URL.createObjectURL(b) : null))
+      .catch(() => { clips.delete(key); return null; }));   // offline: try again next time
+  }
+  return clips.get(key);
+}
+function unlockAudio() {   // inside the tap: iOS lets this element play later without a tap
+  if (!au) { au = new Audio(); au.setAttribute('playsinline', ''); au.preload = 'auto'; }
+  if (!au.src || au.ended || auKey === '') {
+    au.src = SILENCE; auKey = '';
+    const pr = au.play(); if (pr) pr.catch(() => {});
+  }
+}
+function showUnit(u) {
+  document.querySelectorAll('#office .speaking').forEach((x) => x.classList.remove('speaking'));
+  u.els.forEach((x) => x.classList.add('speaking'));
+  const r = u.el.getBoundingClientRect();
+  const bottomGap = ($sheet && !$sheet.hidden ? $sheet.offsetHeight : $bar.offsetHeight) + 20;
+  if (r.top < 110 || r.bottom > innerHeight - bottomGap) window.scrollBy({ top: r.top - 140, behavior: 'smooth' });
+}
+function nextAfter(u, my) {   // a short pause between units, longer at the end of a part
+  const g = u.end ? AUDIO.gap.end : AUDIO.gap.verse;
+  tmr = setTimeout(() => { if (my === gen && playing && !paused) { pos++; speakNext(); paintPos(); } }, g / SPEEDS[speed()][2]);
+}
+function playAudio(u, my) {
+  for (let k = 1; k <= 3 && pos + k < queue.length; k++) clip(queue[pos + k].key);   // fetch ahead
+  clip(u.key).then((url) => {
+    if (my !== gen || !playing || paused) return;
+    if (!url) { speakWeb(u, my); return; }   // no recording for this unit (yet): device voice
+    au.onended = () => { if (my === gen) nextAfter(u, my); };
+    au.onerror = () => { if (my === gen) speakWeb(u, my); };
+    au.src = url; auKey = u.key;
+    au.playbackRate = SPEEDS[speed()][2]; au.defaultPlaybackRate = au.playbackRate;
+    const pr = au.play(); if (pr) pr.catch(() => { if (my === gen) speakWeb(u, my); });
+  });
+}
+function mediaSession() {
+  if (!('mediaSession' in navigator)) return;
+  try {
+    const h = document.querySelector('#office h1, #office h2');
+    navigator.mediaSession.metadata = new MediaMetadata({ title: (document.querySelector('.hourname, #office h1') || h || {}).textContent || '常頌', artist: '常頌 SEMPER', album: '時辰頌禱',
+      artwork: [{ src: 'icons/icon-512.png', sizes: '512x512', type: 'image/png' }] });
+    navigator.mediaSession.setActionHandler('play', () => play());
+    navigator.mediaSession.setActionHandler('pause', () => pause());
+    navigator.mediaSession.setActionHandler('previoustrack', () => jump(-1));
+    navigator.mediaSession.setActionHandler('nexttrack', () => jump(1));
+  } catch (e) { /* older browsers */ }
+}
+
 function speakNext() {
   if (!playing || paused) return;
   document.querySelectorAll('#office .speaking').forEach((x) => x.classList.remove('speaking'));
   if (pos >= queue.length) { stop(); return; }
-  const { el, t } = queue[pos];
-  el.classList.add('speaking');
-  const r = el.getBoundingClientRect();
-  const bottomGap = ($sheet && !$sheet.hidden ? $sheet.offsetHeight : $bar.offsetHeight) + 20;
-  if (r.top < 110 || r.bottom > innerHeight - bottomGap) window.scrollBy({ top: r.top - 140, behavior: 'smooth' });
-  const lang = store.get('ttsLang', 'yue');
-  const u = new SpeechSynthesisUtterance(t);
-  const v = voiceFor(lang);
-  if (v) u.voice = v;
-  u.lang = v ? v.lang : LANGS[lang].want[0];
-  u.rate = SPEEDS[speed()][0];
+  const u = queue[pos];
+  showUnit(u);
   const my = ++gen;
-  const done = () => { live.delete(u); if (my === gen && playing && !paused) { pos++; speakNext(); paintPos(); } };
-  u.onend = done; u.onerror = done;
-  live.add(u);
-  playbackSession();
-  if (synth.paused) synth.resume();
-  synth.speak(u);
+  if (useAudio()) playAudio(u, my); else speakWeb(u, my);
   paintPos();
+}
+function speakWeb(u, my) {
+  if (!synth) { nextAfter(u, my); return; }
+  const parts = u.t.split('\n').flatMap((t) => (t.length > 120 ? t.match(/[^。！？；]+[。！？；」]*/g) || [t] : [t]));   // some browsers stop long utterances
+  let k = 0;
+  const lang = store.get('ttsLang', 'yue');
+  const v = voiceFor(lang);
+  const say = () => {
+    if (my !== gen || !playing || paused) return;
+    if (k >= parts.length) { pos++; speakNext(); paintPos(); return; }
+    const w = new SpeechSynthesisUtterance(parts[k++]);
+    if (v) w.voice = v;
+    w.lang = v ? v.lang : LANGS[lang].want[0];
+    w.rate = SPEEDS[speed()][0];
+    const done = () => { live.delete(w); say(); };
+    w.onend = done; w.onerror = done;
+    live.add(w);
+    playbackSession();
+    if (synth.paused) synth.resume();
+    synth.speak(w);
+  };
+  say();
 }
 
 export function stop() {
@@ -143,14 +234,23 @@ export function stop() {
   if ($sheet && !$sheet.hidden) requestAnimationFrame(() => { if (!playing) { refresh(); paint(); } });   // the new text is on screen by then
 }
 function play() {
-  if (!synth) return;
-  audioOn();
-  if (paused) { paused = false; restart(); paint(); return; }   // resume from the current paragraph
+  if (useAudio()) unlockAudio(); else { if (!synth) return; audioOn(); }
+  if (paused) {
+    paused = false;
+    const u = queue[pos];
+    if (useAudio() && au && u && auKey === u.key && au.currentTime > 0 && !au.ended) {   // resume inside the recording
+      const my = ++gen;
+      au.onended = () => { if (my === gen) nextAfter(u, my); };
+      const pr = au.play(); if (pr) pr.catch(() => {});
+    } else restart();   // resume from the current paragraph
+    paint(); return;
+  }
   const lang = store.get('ttsLang', 'yue');
-  if (!voiceFor(lang) && synth.getVoices().length) noVoice(lang);
+  if (!useAudio() && synth && !voiceFor(lang) && synth.getVoices().length) noVoice(lang);
   if (!marks.length) refresh();
   if (!queue.length) return;
   pos = marks.length ? marks[startAt].i : 0; playing = true; paused = false;
+  mediaSession();
   restart(); paint();
 }
 function pause() { paused = true; halt(); audioOff(); paint(); }
@@ -221,8 +321,7 @@ function close() { $sheet.hidden = true; $bar.hidden = false; document.body.clas
 
 export function initTTS(st) {
   store = st;
-  if (!synth || typeof SpeechSynthesisUtterance === 'undefined') return;   // browser without speech: no bar
-  synth.getVoices(); synth.onvoiceschanged = () => synth.getVoices();
+  if (synth) { synth.getVoices(); synth.onvoiceschanged = () => synth.getVoices(); }
   playbackSession();
   const ctrls = (big) => `<button class="tts-b" data-tts="prev" aria-label="上一段">${ICON.prev}</button>
     <button class="tts-b tts-play${big ? ' big' : ''}" data-tts="play" aria-label="朗讀">${ICON.play}</button>
@@ -241,7 +340,7 @@ export function initTTS(st) {
     <h2>朗讀</h2>
     <div class="tts-note"${store.get('ttsNote', true) ? '' : ' hidden'}>
       <button class="tts-note-x" aria-label="不再顯示">×</button>
-      <p><b>ⓘ</b> 朗讀所用的語音<b>並非由常頌提供</b>，而是來自你的裝置。如要加入或改善語音，請到裝置的<b>輔助使用或語音設定</b>。</p>
+      <p><b>ⓘ</b> <b>粵語</b>朗讀使用常頌錄製的語音（需要網絡；播放過的會保存在裝置）。<b>普通話</b>及未有錄音的部分，使用<b>你裝置的語音</b>；如要加入或改善，請到裝置的<b>輔助使用或語音設定</b>。</p>
       <details><summary>語音設定 ›</summary>
         <ul><li><b>iPhone／iPad：</b>設定 › 輔助使用 › 朗讀內容 › 聲音 › 中文（粵語／普通話），可下載「加強版」語音。</li>
         <li><b>Android：</b>設定 › 系統 › 語言 › 文字轉語音輸出 › 偏好的引擎 › 安裝語音數據（粵語／中文）。</li>
@@ -251,7 +350,7 @@ export function initTTS(st) {
       </details>
     </div>
     <p class="tts-msg" hidden></p>
-    ${IOS ? '<p class="tts-fine tts-ios">iPhone／iPad：如果沒有聲音，請關閉靜音模式（或使用耳機）。</p>' : ''}
+    ${IOS ? '<p class="tts-fine tts-ios">iPhone／iPad：使用裝置語音（普通話）時，如果沒有聲音，請關閉靜音模式（或使用耳機）。</p>' : ''}
     <label class="tts-from" for="ttsFrom">由此開始朗讀：</label>
     <div class="tts-pick"><select id="ttsFrom"></select><button class="tts-setbtn" aria-label="語言及速度" aria-expanded="false">${ICON.set}</button></div>
     <div class="tts-set" hidden>
