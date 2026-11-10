@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>獻禮 OBLATIO</title>
-<meta name="apple-mobile-web-app-title" content="獻禮">
+<title>常頌 SEMPER</title>
+<meta name="apple-mobile-web-app-title" content="常頌">
 <meta name="theme-color" content="#ffffff">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
@@ -12,15 +12,15 @@
 <meta name="apple-mobile-web-app-capable" content="yes">
 <link rel="stylesheet" href="css/fonts.css">
 <link rel="stylesheet" href="css/app.css">
-<script>try { if (JSON.parse(localStorage.getItem('oblatio.skipWelcome'))) document.documentElement.classList.add('nowelcome'); } catch (e) {}</script>
+<script>try { if (JSON.parse(localStorage.getItem('rike.skipWelcome'))) document.documentElement.classList.add('nowelcome'); } catch (e) {}</script>
 </head>
 <body>
 <div id="welcome" class="welcome">
   <div class="welcome-in">
     <img src="icons/icon-512.png" alt="" class="welcome-logo">
-    <h1>OBLATIO</h1>
-    <p class="welcome-zh">獻禮</p>
-    <blockquote class="welcome-verse">「從日出到日落，<br>我的名在異民中大受顯揚，<br>到處有人為我的名焚香獻祭，<br>並奉獻潔淨的祭品。」<cite>瑪拉基亞先知書 1:11</cite><span class="welcome-lat">OBLATIO 是拉丁文，意即「獻禮」，出自這節經文：<i>oblatio munda</i>（潔淨的祭品）。</span></blockquote>
+    <h1>SEMPER</h1>
+    <p class="welcome-zh">常頌</p>
+    <blockquote class="welcome-verse">「我要時時讚美上主，<br>我的口舌不斷讚頌上主。」<cite>聖詠 34:2</cite><span class="welcome-lat">SEMPER 是拉丁文，意即「常常」，出自這節聖詠。</span></blockquote>
     <div class="welcome-script"><button data-script="t" class="pill">繁體字</button><button data-script="s" class="pill">简体字</button></div>
     <label class="welcome-remember"><input type="checkbox" id="welcomeSkip"> 記住我的選擇，以後不再顯示此畫面</label>
     <p class="welcome-note">此設定可隨時在「設定」中更改。</p>
@@ -35,20 +35,20 @@
     <button id="today" class="txt">今天</button>
     <button id="menuBtn" class="ic" aria-label="設定"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2.4" fill="var(--bg, #fff)"/><circle cx="16" cy="12" r="2.4" fill="var(--bg, #fff)"/><circle cx="8" cy="18" r="2.4" fill="var(--bg, #fff)"/></svg></button>
   </div>
-  <nav id="books" class="books" role="tablist" aria-label="禮書"></nav>
+  <nav id="hours" class="hours"></nav>
 </header>
 <div id="celebs" class="celebs"></div>
 <main id="office" class="office" aria-live="polite"><p class="loading">載入中…</p></main>
 <div id="settings" class="sheet" hidden>
   <div class="sheet-in">
     <h2>設定</h2>
-    <p class="about"><b>獻禮 OBLATIO</b>　彌撒・聖事禮典・祝福禮典（時辰頌禱見姊妹程式「常頌 SEMPER」）</p>
+    <p class="about"><b>SEMPER 常頌</b>　「我要時時讚美上主」（詠34:2）</p>
     <div class="row"><span>禮儀日曆</span><span id="calendars" class="pills"></span></div>
     <div class="row"><span>文字</span><button data-script="t" class="pill">繁體字</button><button data-script="s" class="pill">简体字</button></div>
     <div class="row"><span>字型</span><span class="pills"><button data-font="ming" class="pill" style="font-family:SeptiesMing,serif">明體</button><button data-font="hei" class="pill" style="font-family:SeptiesHei,sans-serif">黑體</button><button data-font="kai" class="pill" style="font-family:SeptiesKai,serif">楷體</button><button data-font="sys" class="pill" style="font-family:system-ui,sans-serif">系統</button></span></div>
     <div class="row"><span>字體大小</span><button data-fs="-1" class="pill">A−</button><button data-fs="1" class="pill">A＋</button></div>
     <div class="row"><span>外觀</span><button data-theme="light" class="pill">日間</button><button data-theme="sepia" class="pill">米黃</button><button data-theme="dark" class="pill">夜間</button></div>
-    <label class="row"><input type="checkbox" id="rubrics" checked> 顯示禮規及經文來源</label>
+    <label class="row"><input type="checkbox" id="rubrics" checked> 顯示說明及經文來源</label>
     <label class="row"><input type="checkbox" id="showWelcome" checked> 啟動時顯示歡迎畫面</label>
     <p class="about">聖經經文版權屬思高聖經學會所有（《思高聖經》）。</p>
     <button id="closeSettings" class="pill wide">完成</button>
