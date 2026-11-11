@@ -67,13 +67,15 @@ export async function clearAll() {
 }
 
 const idx = new Map();
+let netFail = false;   // an index could not be fetched at all (offline, or the server refused)
 function month(m) {   // 'YYYY-MM' → index or null
   const id = lang() + m;
-  if (!idx.has(id)) idx.set(id, fetch(base(lang()) + 'index/' + m + '.json', { mode: 'cors', cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => { idx.delete(id); return null; }));
+  if (!idx.has(id)) idx.set(id, fetch(base(lang()) + 'index/' + m + '.json', { mode: 'cors', cache: 'no-cache' }).then((r) => (r.ok ? r.json() : null)).catch(() => { idx.delete(id); netFail = true; return null; }));
   return idx.get(id);
 }
 // what a download would fetch: dates from today, hours chosen
 export async function plan(nDays, hours) {
+  netFail = false;
   const start = dayNo(hkDate()); const want = new Map(); let last = null, missing = 0;
   for (let i = 0; i < nDays; i++) {
     const iso = new Date((start + i) * DAY).toISOString().slice(0, 10);
@@ -86,7 +88,7 @@ export async function plan(nDays, hours) {
   const have = await cachedSet();
   let need = 0, haveB = 0; const todo = [];
   for (const [k, v] of want) { if (have.has(k)) haveB += v.size; else { need += v.size; todo.push([k, v.iso]); } }
-  return { todo, keys: [...want.keys()], need, have: haveB, last, missing, want, base: base(lang()) };
+  return { todo, keys: [...want.keys()], need, have: haveB, last, missing, want, base: base(lang()), netFail };
 }
 export async function download(p, onProgress, signal) {
   const c = await caches.open(CACHE); let done = 0, bytes = 0, fail = 0; const q = p.todo.slice();
@@ -132,7 +134,7 @@ export function initAudioSettings(st, HOURS) {
     $('#aLang').textContent = lang() === 'cmn' ? '普通話' : '粵語';
     cur = await plan(range, hs);
     if (my !== seq) return;
-    if (!cur.keys.length) { $('#aPlan').textContent = navigator.onLine === false ? '未能連線，請稍後再試。' : '這些日子暫時未有錄音。'; return; }
+    if (!cur.keys.length) { $('#aPlan').textContent = (navigator.onLine === false || cur.netFail) ? '未能連線錄音伺服器，請稍後再試。' : '這些日子暫時未有錄音。'; return; }
     const tail = cur.missing && cur.last ? `（錄音暫時只到 ${cur.last.slice(5).replace('-', '月')}日）` : '';
     $('#aPlan').textContent = cur.todo.length ? `需下載約 ${mb(cur.need)}${cur.have ? `（另有 ${mb(cur.have)} 已保存）` : ''}。${tail}` : `已全部保存。${tail}`;
     $('#aGo').disabled = !cur.todo.length;
