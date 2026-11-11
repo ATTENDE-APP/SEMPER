@@ -1,0 +1,10 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "app.attende.semper",
+    "sha256_cert_fingerprints": [
+      "48:77:4A:AA:B0:25:1F:ED:B4:CA:B5:66:55:F2:DD:8F:2E:BF:A4:6A:C9:64:63:34:64:32:2C:AF:73:96:30:F8"
+    ]
+  }
+}]
