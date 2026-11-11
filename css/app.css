@@ -196,3 +196,5 @@ body.has-tts .update { bottom: calc(70px + env(safe-area-inset-bottom)); }
 .audio-set progress[hidden], .audio-set [hidden] { display: none; }
 .audio-set .adel { margin-left: auto; color: var(--red); }
 .audio-set button:disabled { opacity: .45; }
+.licence { margin: 14px 0 10px; padding-top: 10px; border-top: 1px solid var(--line, rgba(127,127,127,.25)); }
+.licence .about { margin: 4px 0; }
