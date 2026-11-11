@@ -48,8 +48,20 @@
     <div class="row"><span>字型</span><span class="pills"><button data-font="ming" class="pill" style="font-family:SeptiesMing,serif">明體</button><button data-font="hei" class="pill" style="font-family:SeptiesHei,sans-serif">黑體</button><button data-font="kai" class="pill" style="font-family:SeptiesKai,serif">楷體</button><button data-font="sys" class="pill" style="font-family:system-ui,sans-serif">系統</button></span></div>
     <div class="row"><span>字體大小</span><button data-fs="-1" class="pill">A−</button><button data-fs="1" class="pill">A＋</button></div>
     <div class="row"><span>外觀</span><button data-theme="light" class="pill">日間</button><button data-theme="sepia" class="pill">米黃</button><button data-theme="dark" class="pill">夜間</button></div>
+    <div class="row"><span>亞孟／阿們</span><span class="pills"><button data-amen="auto" class="pill">按日曆</button><button data-amen="亞孟" class="pill">亞孟</button><button data-amen="阿們" class="pill">阿們</button></span></div>
     <label class="row"><input type="checkbox" id="rubrics" checked> 顯示說明及經文來源</label>
     <label class="row"><input type="checkbox" id="showWelcome" checked> 啟動時顯示歡迎畫面</label>
+    <div id="audioSet" class="audio-set">
+      <h3>朗讀錄音</h3>
+      <p class="about">朗讀使用常頌錄製的語音。播放過的錄音會保存在裝置，30 日未再使用的會自動刪除。</p>
+      <p class="about" id="aUse">已保存：計算中…</p>
+      <p class="about">外出或沒有網絡時，可預先下載（<span id="aLang">粵語</span>，按朗讀設定的語言）：</p>
+      <div class="row"><span>日期</span><span class="pills"><button class="pill" data-arange="1">今天</button><button class="pill" data-arange="7">未來 7 日</button><button class="pill" data-arange="30">未來 30 日</button></span></div>
+      <div class="row arow"><span>時辰</span><span id="aHours" class="ahours"></span></div>
+      <p class="about" id="aPlan"></p>
+      <progress id="aProg" hidden></progress>
+      <div class="row"><button id="aGo" class="pill">下載</button><button id="aStop" class="pill" hidden>取消</button><button id="aDel" class="pill adel">刪除所有錄音</button></div>
+    </div>
     <p class="about">聖經經文版權屬思高聖經學會所有（《思高聖經》）。</p>
     <button id="closeSettings" class="pill wide">完成</button>
   </div>

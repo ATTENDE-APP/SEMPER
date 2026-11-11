@@ -184,3 +184,15 @@ body.has-tts .update { bottom: calc(70px + env(safe-area-inset-bottom)); }
 .welcome-note { font-size: 12px; color: var(--muted); margin: 0 0 12px; }
 .welcome-copy { font-size: 11px; color: var(--muted); margin: 14px 0 0; }
 .nowelcome #welcome { display: none; }
+
+/* 設定 › 朗讀錄音 */
+.audio-set { border-top: 1px solid var(--line); margin-top: 12px; padding-top: 6px; }
+.audio-set h3 { margin: 6px 0 2px; font-size: 16px; color: var(--red); }
+.audio-set .about { margin: 4px 0; }
+.audio-set .arow { align-items: flex-start; }
+.ahours { display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.ahr { white-space: nowrap; }
+.audio-set progress { width: 100%; height: 6px; accent-color: var(--accent); }
+.audio-set progress[hidden], .audio-set [hidden] { display: none; }
+.audio-set .adel { margin-left: auto; color: var(--red); }
+.audio-set button:disabled { opacity: .45; }

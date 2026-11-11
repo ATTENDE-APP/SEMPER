@@ -5,7 +5,8 @@ const synth = typeof window !== 'undefined' ? window.speechSynthesis : null;
 const LANGS = { yue: { label: '粵語', want: ['zh-HK', 'yue-HK', 'yue', 'zh-yue'] }, cmn: { label: '普通話', want: ['zh-TW', 'zh-CN', 'cmn-Hant-TW', 'cmn-Hans-CN', 'zh'] } };
 const SPEEDS = { slow: [0.6, '慢', 0.8], mid: [0.9, '中', 1.0] };   // [device voice rate, label, recorded audio rate]; no fast speed (Fr. Gervais, 9 Nov 2026)
 // recorded Cantonese audio: one mp3 per unit (a verse, an antiphon, a paragraph), named by a hash of its text
-const AUDIO = { base: 'https://audio.attende.app/yue/wl1/', gap: { verse: 650, end: 1200 } };
+import { base as audioBase, markUsed, cleanup } from './audio.js';
+const AUDIO = { gap: { verse: 650, end: 1200 } };
 // cyrb53: 53-bit hash of the unit text → 14 hex digits (the build uses the same function on the same text)
 function hash(str) {
   let h1 = 0xdeadbeef, h2 = 0x41c6ce57;
@@ -66,13 +67,17 @@ function voiceFor(lang) {
 // voice reads the verse as a sentence; every other paragraph (antiphon, versicle, prose) is a unit of its own.
 // Each unit: { el (first line), els, t (lines joined by \n), key, end (last unit of its section) }.
 function lineText(el) {
-  const c = el.cloneNode(true); c.querySelectorAll('.spk, .antl').forEach((x) => x.remove());
+  let c;
+  if (el.dataset.tc !== undefined) { c = document.createElement('p'); c.innerHTML = el.dataset.tc; }   // 简体 on screen: use the traditional text
+  else c = el.cloneNode(true);
+  c.querySelectorAll('.spk, .antl').forEach((x) => x.remove());
   return c.textContent
     .replace(/[※†＊*]/g, '')
     .replace(/[（(][^（）()]*[0-9A-Za-z][^（）()]*[）)]/g, '')      // (希3:13)、(Nunc Dimittis)
     .replace(/^[（(][一二三四五六七八九十]+[）)]/, '')               // （一）母后萬福 → 母后萬福
     .replace(/祢/g, '你').replace(/祂/g, '他')                        // same sound; some voices do not know these forms
-    .replace(/\s+/g, '').trim();
+    .replace(/\s+/g, '').trim()
+    .replace(/^[^\p{L}\p{N}]+$/u, '');                             // nothing to say (e.g. a lone dash)
 }
 function collect() {
   const out = []; let open = null;
@@ -142,14 +147,15 @@ function refresh() {   // re-read the screen (called when the panel opens and be
 // ---- recorded audio ----
 let au = null, auKey = '';                    // the one <audio> element (unlocked in the first tap) and the unit it holds
 const clips = new Map();                      // key → Promise<blob URL | null>
-const useAudio = () => store.get('ttsLang', 'yue') === 'yue' && typeof fetch !== 'undefined';
+const useAudio = () => typeof fetch !== 'undefined';   // recordings for both languages; a missing one falls back to the device voice
 function clip(key) {
-  if (!clips.has(key)) {
-    clips.set(key, fetch(AUDIO.base + key + '.mp3', { mode: 'cors' })
+  const url = audioBase(store.get('ttsLang', 'yue')) + key + '.mp3';
+  if (!clips.has(url)) {
+    clips.set(url, fetch(url, { mode: 'cors' })
       .then((r) => (r.ok ? r.blob() : null)).then((b) => (b && b.size ? URL.createObjectURL(b) : null))
-      .catch(() => { clips.delete(key); return null; }));   // offline: try again next time
+      .catch(() => { clips.delete(url); return null; }));   // offline: try again next time
   }
-  return clips.get(key);
+  return clips.get(url);
 }
 function unlockAudio() {   // inside the tap: iOS lets this element play later without a tap
   if (!au) { au = new Audio(); au.setAttribute('playsinline', ''); au.preload = 'auto'; }
@@ -176,7 +182,7 @@ function playAudio(u, my) {
     if (!url) { speakWeb(u, my); return; }   // no recording for this unit (yet): device voice
     au.onended = () => { if (my === gen) nextAfter(u, my); };
     au.onerror = () => { if (my === gen) speakWeb(u, my); };
-    au.src = url; auKey = u.key;
+    au.src = url; auKey = u.key; markUsed([u.key]);
     au.playbackRate = SPEEDS[speed()][2]; au.defaultPlaybackRate = au.playbackRate;
     const pr = au.play(); if (pr) pr.catch(() => { if (my === gen) speakWeb(u, my); });
   });
@@ -322,6 +328,7 @@ function close() { $sheet.hidden = true; $bar.hidden = false; document.body.clas
 export function initTTS(st) {
   store = st;
   if (synth) { synth.getVoices(); synth.onvoiceschanged = () => synth.getVoices(); }
+  cleanup();
   playbackSession();
   const ctrls = (big) => `<button class="tts-b" data-tts="prev" aria-label="上一段">${ICON.prev}</button>
     <button class="tts-b tts-play${big ? ' big' : ''}" data-tts="play" aria-label="朗讀">${ICON.play}</button>
@@ -340,7 +347,7 @@ export function initTTS(st) {
     <h2>朗讀</h2>
     <div class="tts-note"${store.get('ttsNote', true) ? '' : ' hidden'}>
       <button class="tts-note-x" aria-label="不再顯示">×</button>
-      <p><b>ⓘ</b> <b>粵語</b>朗讀使用常頌錄製的語音（需要網絡；播放過的會保存在裝置）。<b>普通話</b>及未有錄音的部分，使用<b>你裝置的語音</b>；如要加入或改善，請到裝置的<b>輔助使用或語音設定</b>。</p>
+      <p><b>ⓘ</b> 朗讀使用常頌錄製的語音（需要網絡；播放過的會保存在裝置，亦可在「設定 › 朗讀錄音」預先下載）。未有錄音的部分，使用<b>你裝置的語音</b>；如要加入或改善，請到裝置的<b>輔助使用或語音設定</b>。</p>
       <details><summary>語音設定 ›</summary>
         <ul><li><b>iPhone／iPad：</b>設定 › 輔助使用 › 朗讀內容 › 聲音 › 中文（粵語／普通話），可下載「加強版」語音。</li>
         <li><b>Android：</b>設定 › 系統 › 語言 › 文字轉語音輸出 › 偏好的引擎 › 安裝語音數據（粵語／中文）。</li>
@@ -350,7 +357,7 @@ export function initTTS(st) {
       </details>
     </div>
     <p class="tts-msg" hidden></p>
-    ${IOS ? '<p class="tts-fine tts-ios">iPhone／iPad：使用裝置語音（普通話）時，如果沒有聲音，請關閉靜音模式（或使用耳機）。</p>' : ''}
+    ${IOS ? '<p class="tts-fine tts-ios">iPhone／iPad：使用裝置語音時，如果沒有聲音，請關閉靜音模式（或使用耳機）。</p>' : ''}
     <label class="tts-from" for="ttsFrom">由此開始朗讀：</label>
     <div class="tts-pick"><select id="ttsFrom"></select><button class="tts-setbtn" aria-label="語言及速度" aria-expanded="false">${ICON.set}</button></div>
     <div class="tts-set" hidden>

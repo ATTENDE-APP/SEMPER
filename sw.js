@@ -1,8 +1,8 @@
 // Service worker：全部經文離線可用。更新時請改 VERSION。
-const VERSION = 'rike-v53';
+const VERSION = 'rike-v54';
 const FONTS = 'fonts-v1';   // change only when the font files change
 const AUDIO = 'audio-v1';   // recorded read-aloud clips (audio.attende.app), kept across app versions
-const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/calendar.js', 'js/office.js', 'js/tts.js', 'manifest.webmanifest',
+const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/calendar.js', 'js/office.js', 'js/tts.js', 'js/audio.js', 'manifest.webmanifest',
   'css/fonts.css', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon-maskable-512.png',
   'data/days.json', 'data/texts.json', 'data/santoral.json', 'data/propers.json', 'data/commons.json', 'data/index.json', 'data/invit.json', 'data/calendars.json', 'data/t2s.json', 'data/offices.json'];
 // cache: 'reload' bypasses the browser's HTTP cache (GitHub Pages keeps files 10 minutes), so a new version never
@@ -17,6 +17,10 @@ self.addEventListener('fetch', (e) => {
   if (e.request.method !== 'GET') return;
   // recorded read-aloud clips: cache first; a missing clip (404) is not stored, so it is found once uploaded
   if (new URL(e.request.url).hostname === 'audio.attende.app') {
+    if (new URL(e.request.url).pathname.includes('/index/')) {   // download index: always the newest, else the saved copy
+      e.respondWith(caches.open(AUDIO).then((c) => fetch(e.request).then((res) => { if (res.ok) c.put(e.request, res.clone()); return res; }).catch(() => c.match(e.request))));
+      return;
+    }
     e.respondWith(caches.open(AUDIO).then((c) => c.match(e.request).then((r) => r || fetch(e.request).then((res) => { if (res.ok && res.status === 200) c.put(e.request, res.clone()); return res; }))));
     return;
   }

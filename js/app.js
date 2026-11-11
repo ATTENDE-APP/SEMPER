@@ -1,8 +1,9 @@
+import { initAudioSettings } from './audio.js';
 import { loadData, office, dayInfo, HOURS, dateLabel, nearestArchiveDate, invitPsalms, setCalendar, calendarList, currentCalendar } from './office.js';
 import { fromIso, iso, WD } from './calendar.js';
 import { initTTS, stop as stopTTS } from './tts.js';
 
-const APP_VERSION = 'v53';   // keep in step with VERSION in sw.js
+const APP_VERSION = 'v54';   // keep in step with VERSION in sw.js
 const $ = (s) => document.querySelector(s);
 const store = { get(k, d) { try { const v = localStorage.getItem('rike.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('rike.' + k, JSON.stringify(v)); } catch {} } };
@@ -37,6 +38,8 @@ async function loadT2S() {
 }
 function zh(root = document.body) {
   if (!T2S || store.get('script', 't') !== 's') return;
+  // keep the traditional text of each paragraph: read-aloud recordings are named by it
+  (root.querySelectorAll ? root : document).querySelectorAll('#office section > p:not([data-tc])').forEach((p) => { p.dataset.tc = p.innerHTML; });
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('[data-script]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
   for (let n = w.nextNode(); n; n = w.nextNode()) { const v = n.nodeValue.replace(T2S.re, T2S.f); if (v !== n.nodeValue) n.nodeValue = v; }
   if (root === document.body) document.title = document.title.replace(T2S.re, T2S.f);
@@ -197,7 +200,9 @@ function render() {
   setHash();
   const cal = currentCalendar();
   if (cal === 'tw') retext('#office h1, #celebs', /周/g, '週');            // 台灣用「週」
-  if (cal !== 'hk' && cal !== 'mo') retext('#office', /亞孟/g, '阿們');      // 港澳用「亞孟」，其他用「阿們」
+  // 亞孟／阿們：by default 港澳 亞孟, elsewhere 阿們; the reader can choose either in 設定 (Fr. Gervais, 11 Nov 2026)
+  const amen = store.get('amen', 'auto');
+  if (amen === '阿們' || (amen === 'auto' && cal !== 'hk' && cal !== 'mo')) retext('#office', /亞孟/g, '阿們');
   zh($('header') || document.body); zh($('#office')); zh($('#celebs') || document.body);
 }
 
@@ -217,6 +222,7 @@ function applyPrefs() {
   const th = store.get('theme', null); if (th) root.dataset.theme = th; else delete root.dataset.theme;
   document.body.classList.toggle('norubrics', !store.get('rubrics', true));
   $('#rubrics').checked = store.get('rubrics', true);
+  document.querySelectorAll('[data-amen]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.amen === store.get('amen', 'auto')));
   if ($('#showWelcome')) $('#showWelcome').checked = !store.get('skipWelcome', false);
   document.querySelectorAll('[data-theme]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.theme === (th || '')));
   document.querySelectorAll('[data-script]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.script === store.get('script', 't')));
@@ -246,6 +252,7 @@ async function main() {
   document.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { store.set('font', b.dataset.font); applyPrefs(); });
   $('#showWelcome').onchange = (e) => { store.set('skipWelcome', !e.target.checked); };
   $('#rubrics').onchange = (e) => { store.set('rubrics', e.target.checked); applyPrefs(); };
+  document.querySelectorAll('[data-amen]').forEach((b) => b.onclick = () => { store.set('amen', b.dataset.amen); applyPrefs(); render(); });
   document.addEventListener('keydown', (e) => { if (e.target.tagName === 'INPUT') return; if (e.key === 'ArrowLeft') shift(-1); if (e.key === 'ArrowRight') shift(1); });
   window.addEventListener('hashchange', () => { parseHash(); render(); });
   document.querySelectorAll('[data-script]').forEach((b) => b.onclick = async () => {
@@ -263,6 +270,7 @@ async function main() {
   await Promise.all([loadData(), loadT2S()]);
   setCalendar(store.get('cal', 'hk'));
   renderCalendars();
+  initAudioSettings(store, HOURS);
   zh();
   const { first, last } = nearestArchiveDate();
   render();
