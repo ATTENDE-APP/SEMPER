@@ -1,5 +1,5 @@
 // Service worker：全部經文離線可用。更新時請改 VERSION。
-const VERSION = 'rike-v56';
+const VERSION = 'rike-v57';
 const FONTS = 'fonts-v2';   // change only when the font files change
 const AUDIO = 'audio-v1';   // recorded read-aloud clips (audio.attende.app), kept across app versions
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/calendar.js', 'js/office.js', 'js/tts.js', 'js/audio.js', 'manifest.webmanifest',
