@@ -35,13 +35,13 @@
     <button id="today" class="txt">今天</button>
     <button id="menuBtn" class="ic" aria-label="設定"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2.4" fill="var(--bg, #fff)"/><circle cx="16" cy="12" r="2.4" fill="var(--bg, #fff)"/><circle cx="8" cy="18" r="2.4" fill="var(--bg, #fff)"/></svg></button>
   </div>
-  <nav id="hours" class="hours"></nav>
+  <nav id="hours" class="hours" aria-label="時辰"></nav>
 </header>
 <div id="celebs" class="celebs"></div>
-<main id="office" class="office" aria-live="polite"><p class="loading">載入中…</p></main>
-<div id="settings" class="sheet" hidden>
+<main id="office" class="office" aria-live="polite" aria-busy="true"><p class="loading">載入中…</p></main>
+<div id="settings" class="sheet" role="dialog" aria-modal="true" aria-labelledby="settingsTitle" hidden>
   <div class="sheet-in">
-    <h2>設定</h2>
+    <h2 id="settingsTitle" tabindex="-1">設定</h2>
     <p class="about"><b>SEMPER 常頌</b>　「我要時時讚美上主」（詠34:2）</p>
     <div class="row"><span>禮儀日曆</span><span id="calendars" class="pills"></span></div>
     <div class="row"><span>文字</span><button data-script="t" class="pill">繁體字</button><button data-script="s" class="pill">简体字</button></div>
@@ -51,17 +51,8 @@
     <div class="row"><span>亞孟／阿們</span><span class="pills"><button data-amen="auto" class="pill">按日曆</button><button data-amen="亞孟" class="pill">亞孟</button><button data-amen="阿們" class="pill">阿們</button></span></div>
     <label class="row"><input type="checkbox" id="rubrics" checked> 顯示說明及經文來源</label>
     <label class="row"><input type="checkbox" id="showWelcome" checked> 啟動時顯示歡迎畫面</label>
-    <div id="audioSet" class="audio-set">
-      <h3>朗讀錄音</h3>
-      <p class="about">朗讀使用常頌錄製的語音。播放過的錄音會保存在裝置，30 日未再使用的會自動刪除。</p>
-      <p class="about" id="aUse">已保存：計算中…</p>
-      <p class="about">外出或沒有網絡時，可預先下載（<span id="aLang">粵語</span>，按朗讀設定的語言）：</p>
-      <div class="row"><span>日期</span><span class="pills"><button class="pill" data-arange="1">今天</button><button class="pill" data-arange="7">未來 7 日</button><button class="pill" data-arange="30">未來 30 日</button></span></div>
-      <div class="row arow"><span>時辰</span><span id="aHours" class="ahours"></span></div>
-      <p class="about" id="aPlan"></p>
-      <progress id="aProg" hidden></progress>
-      <div class="row"><button id="aGo" class="pill">下載</button><button id="aStop" class="pill" hidden>取消</button><button id="aDel" class="pill adel">刪除所有錄音</button></div>
-    </div>
+    <p class="about" id="buildInfo"></p>
+    <p class="about" id="offlineStatus" role="status"></p>
     <div class="licence">
     <p class="about"><b>版權及授權</b></p>
     <p class="about">本應用程式之原始碼、介面設計、編排邏輯、圖示及原創文字，著作權歸 Gervais Baudry 所有。</p>

@@ -1,9 +1,9 @@
-import { initAudioSettings } from './audio.js';
+import { validDate, parseRoute, isCompletenessWarning, completenessWarnings } from './ui.js';
 import { loadData, office, dayInfo, HOURS, dateLabel, nearestArchiveDate, invitPsalms, setCalendar, calendarList, currentCalendar } from './office.js';
 import { fromIso, iso, WD } from './calendar.js';
 import { initTTS, stop as stopTTS } from './tts.js';
 
-const APP_VERSION = 'v57';   // keep in step with VERSION in sw.js
+const APP_VERSION = 'v59';   // keep in step with VERSION in sw.js
 const $ = (s) => document.querySelector(s);
 const store = { get(k, d) { try { const v = localStorage.getItem('rike.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('rike.' + k, JSON.stringify(v)); } catch {} } };
@@ -16,8 +16,10 @@ function defaultHour() {
 const S = { date: hkToday(), hour: defaultHour(), choice: {}, sub: store.get('sub', '午時'), inv: store.get('inv', '95'), alt: store.get('alt', {}) };
 
 function parseHash() {
-  const m = location.hash.match(/^#\/(\d{4}-\d\d-\d\d)?\/?(\d)?(?:\?c=([\w@]*))?/);
-  if (m) { if (m[1]) S.date = m[1]; if (m[2]) S.hour = m[2]; if (m[3] !== undefined) S.choice[S.date] = m[3]; }
+  const route = parseRoute(location.hash);
+  if (route.date) S.date = route.date;
+  if (route.hour) S.hour = route.hour;
+  if (route.choice !== undefined) S.choice[S.date] = route.choice;
 }
 function setHash() {
   const c = S.choice[S.date];
@@ -38,7 +40,7 @@ async function loadT2S() {
 }
 function zh(root = document.body) {
   if (!T2S || store.get('script', 't') !== 's') return;
-  // keep the traditional text of each paragraph: read-aloud recordings are named by it
+  // Keep Traditional text available to device speech when the display is Simplified.
   (root.querySelectorAll ? root : document).querySelectorAll('#office section > p:not([data-tc])').forEach((p) => { p.dataset.tc = p.innerHTML; });
   const w = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, { acceptNode: (n) => (n.parentElement && n.parentElement.closest('[data-script]') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT) });
   for (let n = w.nextNode(); n; n = w.nextNode()) { const v = n.nodeValue.replace(T2S.re, T2S.f); if (v !== n.nodeValue) n.nodeValue = v; }
@@ -97,7 +99,7 @@ function renderLines(lines, s) {
   let ctx = { ...s, st: {} };
   return lines.map((l, i) => { if (!VERSE.has(ctx.k) && l.length < 40 && /^(西默盎|聖母謝主曲|匝加利亞)/.test(l)) ctx = { ...ctx, k: 'gospel' }; return renderLine(l, { ...ctx, prev: lines[i - 1] }); }).join('').replace(/【答】/g, '<span class="spk">【答】</span>');
 }
-const tabs = (attr, items, cur) => `<div class="tabs" role="tablist">${items.map(([v, lab]) => `<button class="pill" role="tab" ${attr}="${v}" aria-pressed="${v === cur}">${esc(lab)}</button>`).join('')}</div>`;
+const tabs = (attr, items, cur) => `<div class="tabs" role="group">${items.map(([v, lab]) => `<button class="pill" ${attr}="${v}" aria-pressed="${v === cur}">${esc(lab)}</button>`).join('')}</div>`;
 
 // 序經: the day's antiphon with Ps 95 (default), 100, 67 or 24 — antiphon repeated after each strophe
 function renderInvit(s) {
@@ -163,14 +165,16 @@ function renderCelebs(info) {
   const selLab = labOf(sel) !== '平日' || info.choices.length > 1 ? labOf(sel) : '';
   parts.push(`<h1 class="cel">${esc(sel.title)}${selLab ? `<span class="rank">${selLab}</span>` : ''}</h1>`);
   if (info.choices.length > 1) {
-    parts.push(`<div class="opts" role="radiogroup" aria-label="今日可選"><div class="opts-lab">今日可選：</div>${info.choices.map((c) =>
-      `<button class="opt" role="radio" data-c="${c.id}" aria-checked="${c.id === cur}"><span class="dot" aria-hidden="true">${c.id === cur ? '◉' : '○'}</span><span>${esc(c.title)} <small>${labOf(c)}</small></span></button>`).join('')}</div>`);
+    parts.push(`<div class="opts" role="group" aria-label="今日可選"><div class="opts-lab">今日可選：</div>${info.choices.map((c) =>
+      `<button class="opt" data-c="${c.id}" aria-pressed="${c.id === cur}"><span class="dot" aria-hidden="true">${c.id === cur ? '◉' : '○'}</span><span>${esc(c.title)} <small>${labOf(c)}</small></span></button>`).join('')}</div>`);
   }
   el.innerHTML = parts.join('');
   el.querySelectorAll('button.opt').forEach((b) => b.onclick = () => { S.choice[S.date] = b.dataset.c; render(); });
 }
 
+let dataReady = false;
 function render() {
+  if (!dataReady) return;
   stopTTS();   // new text on screen: stop reading
   const info = dayInfo(S.date);
   if (!info.choices.some((c) => c.id === (S.choice[S.date] || ''))) S.choice[S.date] = '';
@@ -178,7 +182,7 @@ function render() {
   $('#dateLabel').textContent = `${y}年${m}月${d}日`;
   $('#datePick').value = S.date;
   renderCelebs(info);
-  $('#hours').innerHTML = HOURS.map((h) => `<button role="tab" data-h="${h.n}" aria-selected="${h.n === S.hour}">${h.short}</button>`).join('');
+  $('#hours').innerHTML = HOURS.map((h) => `<button aria-pressed="${h.n === S.hour}" data-h="${h.n}">${h.short}</button>`).join('');
   $('#hours').querySelectorAll('button').forEach((b) => b.onclick = () => { S.hour = b.dataset.h; render(); window.scrollTo(0, 0); });
   const r = office(S.date, S.hour, S.choice[S.date] || '');
   // the date and the day's celebration are already shown above; the heading names the hour only
@@ -187,12 +191,16 @@ function render() {
   const fv = /第一(晚禱|夜禱)/.test(r.title);
   const head = fv ? r.title.replace(/^[^　\s]*月[^　\s]*日[　\s]*/, '').replace(/（聖詠集[^）]*）/g, '').trim() : hourName;
   let html = fv ? `<h1>${esc(head)}</h1>` : '';   // the hour itself is already the selected tab
-  if (r.notes.length) html += `<div class="notes">${r.notes.map((n) => `<p>${esc(n)}</p>`).join('')}</div>`;
+  const warnings = completenessWarnings(r);
+  if (warnings.length) html += `<div class="completeness" role="note" aria-label="經文完整性提示">${warnings.map((n) => `<p>${esc(n)}</p>`).join('')}</div>`;
+  const notes = r.notes.filter((n) => !isCompletenessWarning(n));
+  if (notes.length) html += `<div class="notes">${notes.map((n) => `<p>${esc(n)}</p>`).join('')}</div>`;
   // the invitatory opens the day's prayer (GILH 35); wording of the rubric after 《每日頌禱》:「如念序經，則省去此開端詞」
   if (S.hour === '4' || S.hour === '1') html += `<p class="rub firsthour">如本時辰是一日的第一個祈禱，先念<a href="#" data-goto="0">序經</a>；如念序經，則省去此開端詞。</p>`;
   if (S.hour === '2') html += `<div class="subsel">${['午前', '午時', '午後'].map((x) => `<button class="pill" data-sub="${x}" aria-pressed="${x === S.sub}">${x}</button>`).join('')}</div>`;
   html += r.sections.length ? r.sections.map((s) => renderSection(s, S.hour)).join('') : `<p class="empty">此日日課尚未收錄。</p>`;
   $('#office').innerHTML = html;
+  $('#office').setAttribute('aria-busy', 'false');
   $('#office').querySelectorAll('[data-goto]').forEach((a) => a.onclick = (e) => { e.preventDefault(); S.hour = a.dataset.goto; render(); window.scrollTo(0, 0); });
   $('#office').querySelectorAll('[data-sub]').forEach((b) => b.onclick = () => { S.sub = b.dataset.sub; store.set('sub', S.sub); render(); });
   $('#office').querySelectorAll('[data-inv]').forEach((b) => b.onclick = () => { S.inv = b.dataset.inv; store.set('inv', S.inv); render(); });
@@ -214,7 +222,7 @@ function retext(sel, re, to) {
   }
 }
 
-function shift(n) { const d = fromIso(S.date); S.date = iso(new Date(d.getTime() + n * 864e5)); render(); window.scrollTo(0, 0); }
+function shift(n) { const d = fromIso(S.date); const next = iso(new Date(d.getTime() + n * 864e5)); if (!validDate(next)) return; S.date = next; render(); window.scrollTo(0, 0); }
 
 function applyPrefs() {
   const root = document.documentElement;
@@ -240,20 +248,32 @@ function renderCalendars() {
 async function main() {
   parseHash();
   applyPrefs();
+  // Retire only the old recording-download preferences; preserve reading preferences.
+  try { for (const key of ['audioUsed', 'audioClean', 'audioRange']) localStorage.removeItem('rike.' + key); } catch {}
   $('#prev').onclick = () => shift(-1);
   $('#next').onclick = () => shift(1);
   $('#today').onclick = () => { S.date = hkToday(); S.hour = defaultHour(); render(); };
-  $('#datePick').onchange = (e) => { if (e.target.value) { S.date = e.target.value; render(); } };
-  $('#menuBtn').onclick = () => { $('#settings').hidden = false; };
-  $('#closeSettings').onclick = () => { $('#settings').hidden = true; };
-  $('#settings').onclick = (e) => { if (e.target.id === 'settings') $('#settings').hidden = true; };
+  $('#datePick').onchange = (e) => { if (validDate(e.target.value)) { S.date = e.target.value; render(); } };
+  let settingsFocus;
+  const closeSettings = () => { $('#settings').hidden = true; document.body.classList.remove('settings-open'); settingsFocus?.focus(); };
+  $('#menuBtn').onclick = () => { settingsFocus = document.activeElement; $('#settings').hidden = false; document.body.classList.add('settings-open'); $('#settingsTitle').focus(); };
+  $('#closeSettings').onclick = closeSettings;
+  $('#settings').onclick = (e) => { if (e.target.id === 'settings') closeSettings(); };
+  $('#settings').addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') { e.preventDefault(); closeSettings(); }
+    if (e.key !== 'Tab') return;
+    const focusable = [...$('#settings').querySelectorAll('button, input, select, a[href]')].filter((el) => !el.disabled && el.getClientRects().length);
+    const first = focusable[0], last = focusable.at(-1);
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === $('#settingsTitle'))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   document.querySelectorAll('[data-fs]').forEach((b) => b.onclick = () => { store.set('fs', Math.max(14, Math.min(30, store.get('fs', 19) + Number(b.dataset.fs)))); applyPrefs(); });
   document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { store.set('theme', b.dataset.theme); applyPrefs(); });
   document.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { store.set('font', b.dataset.font); applyPrefs(); });
   $('#showWelcome').onchange = (e) => { store.set('skipWelcome', !e.target.checked); };
   $('#rubrics').onchange = (e) => { store.set('rubrics', e.target.checked); applyPrefs(); };
   document.querySelectorAll('[data-amen]').forEach((b) => b.onclick = () => { store.set('amen', b.dataset.amen); applyPrefs(); render(); });
-  document.addEventListener('keydown', (e) => { if (e.target.tagName === 'INPUT') return; if (e.key === 'ArrowLeft') shift(-1); if (e.key === 'ArrowRight') shift(1); });
+  document.addEventListener('keydown', (e) => { if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.target.closest('input, select, textarea, button, a, [contenteditable], [role=dialog]') || !$('#settings').hidden || !$('#welcome').hidden || document.querySelector('.tts-sheet:not([hidden])')) return; if (e.key === 'ArrowLeft') shift(-1); if (e.key === 'ArrowRight') shift(1); });
   window.addEventListener('hashchange', () => { parseHash(); render(); });
   document.querySelectorAll('[data-script]').forEach((b) => b.onclick = async () => {
     const was = store.get('script', 't'); store.set('script', b.dataset.script); applyPrefs();
@@ -264,23 +284,46 @@ async function main() {
   // welcome screen: stays until the reader has chosen 繁體／简体 (if wished) and taps 進入
   // (with 「記住我的選擇」 it is not shown again; 設定 › 啟動時顯示歡迎畫面 turns it back on)
   const W = $('#welcome');
-  const closeWelcome = () => { if (!W || W.hidden) return; store.set('welcomed', true); W.classList.add('out'); setTimeout(() => { W.hidden = true; }, 400); };
+  const closeWelcome = () => { if (!W || W.hidden) return; store.set('welcomed', true); W.classList.add('out'); setTimeout(() => { W.hidden = true; if ($('#settings').hidden && !document.querySelector('.tts-sheet:not([hidden])')) $('#today').focus(); }, 400); };
   if (store.get('skipWelcome', false)) W.hidden = true;
   $('#welcomeGo').onclick = () => { if ($('#welcomeSkip').checked) { store.set('skipWelcome', true); applyPrefs(); } closeWelcome(); };
   await Promise.all([loadData(), loadT2S()]);
   setCalendar(store.get('cal', 'hk'));
+  dataReady = true;
   renderCalendars();
-  initAudioSettings(store, HOURS);
   zh();
   const { first, last } = nearestArchiveDate();
   render();
-  if (navigator.serviceWorker && navigator.serviceWorker.register && location.protocol !== 'file:') try {
-    navigator.serviceWorker.register('sw.js').then((reg) => {
-      reg.addEventListener('updatefound', () => { const w = reg.installing; w && w.addEventListener('statechange', () => {
-        if (w.state === 'installed' && navigator.serviceWorker.controller) { $('#update').hidden = false; $('#updateBtn').onclick = () => w.postMessage('skip'); } }); });
+  $('#buildInfo').textContent = `${APP_VERSION} · 存檔：${first} — ${last}`;
+  const status = (message) => { $('#offlineStatus').textContent = message; zh($('#offlineStatus')); };
+  if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+    let applying = false;
+    navigator.serviceWorker.addEventListener('controllerchange', () => {
+      if (applying) location.reload();
+      else status('經文已可離線使用；離線朗讀需在裝置下載所需語音。');
     });
-    navigator.serviceWorker.addEventListener('controllerchange', () => location.reload());
-    document.addEventListener('visibilitychange', () => { if (!document.hidden) navigator.serviceWorker.getRegistration().then((r) => r && r.update()); });
-  } catch (e) { /* offline caching unavailable in this browser */ }
+    try {
+      const reg = await navigator.serviceWorker.register('sw.js');
+      const offerUpdate = () => {
+        if (!reg.waiting || !navigator.serviceWorker.controller) return;
+        $('#update').hidden = false;
+        $('#updateBtn').onclick = () => { applying = true; stopTTS(); reg.waiting?.postMessage('skip'); };
+      };
+      offerUpdate();
+      const watch = (worker) => worker?.addEventListener('statechange', () => {
+        if (worker.state === 'installed') { offerUpdate(); if (!navigator.serviceWorker.controller) status('經文已下載，正在準備離線使用…'); }
+        if (worker.state === 'redundant') status('未能完成離線準備，請連線後重試。');
+      });
+      watch(reg.installing);
+      reg.addEventListener('updatefound', () => watch(reg.installing));
+      status(navigator.serviceWorker.controller ? '經文已可離線使用；離線朗讀需在裝置下載所需語音。' : '正在準備離線經文，請保持連線…');
+      document.addEventListener('visibilitychange', () => { if (!document.hidden) reg.update().catch(() => {}); });
+    } catch { status('未能啟用離線儲存，目前可在線閱讀。'); }
+  } else status('此瀏覽器未能啟用離線儲存，目前可在線閱讀。');
 }
-main();
+main().catch(() => {
+  $('#office').setAttribute('aria-busy', 'false');
+  $('#office').innerHTML = '<div class="load-error" role="alert"><p>未能載入日課。請檢查網絡後重試。</p><button class="pill" id="retryLoad">重新載入</button></div>';
+  $('#retryLoad').onclick = () => location.reload();
+  zh($('#office'));
+});

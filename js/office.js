@@ -15,7 +15,15 @@ const SANCT = { 1: ['invit', 'hymn', 'reading', 'resp', 'gospel', 'interc', 'ora
 let D = null;
 export async function loadData(base = 'data/') {
   if (D) return D;
-  const get = (f) => fetch(base + f).then((r) => r.json());
+  const get = async (f) => {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 20000);
+    try {
+      const r = await fetch(base + f, { signal: controller.signal });
+      if (r.ok === false) throw new Error(`Unable to load ${f}: ${r.status}`);
+      return await r.json();
+    } finally { clearTimeout(timer); }
+  };
   const [days, texts, santoral, propers, commons, index] = await Promise.all(
     ['days.json', 'texts.json', 'santoral.json', 'propers.json', 'commons.json', 'index.json'].map(get));
   D = { days, texts, santoral, propers, commons, index };
