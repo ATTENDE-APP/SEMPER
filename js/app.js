@@ -1,9 +1,10 @@
-import { validDate, parseRoute, isCompletenessWarning, completenessWarnings } from './ui.js';
+import { displayNotice, bindWelcomeSetting, validDate, parseRoute, isCompletenessWarning, completenessWarnings } from './ui.js';
 import { loadData, office, dayInfo, HOURS, dateLabel, nearestArchiveDate, invitPsalms, setCalendar, calendarList, currentCalendar } from './office.js';
 import { fromIso, iso, WD } from './calendar.js';
 import { initTTS, stop as stopTTS } from './tts.js';
 
-const APP_VERSION = 'v62';   // keep in step with VERSION in sw.js
+const APP_VERSION = '1.0 (5)';   // Match iOS marketing version and build.
+const CONTENT_VERSION = 64;   // Internal data/cache revision; matches sw.js, never shown as the release name.
 const $ = (s) => document.querySelector(s);
 const store = { get(k, d) { try { const v = localStorage.getItem('rike.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('rike.' + k, JSON.stringify(v)); } catch {} } };
@@ -120,16 +121,16 @@ function renderInvit(s) {
   const body = [`§${ps.title}`, `¤${ps.epi}`];
   for (const st of ps.strophes) body.push(...st.map((l) => '¶' + l), `對經：${ant}`);
   body.push(...ps.gloria.map((l) => '¶' + l), `對經：${ant}`);
-  const h = `<h2 class="sh">${esc(s.h)}${s.tag ? ` <span class="tag">${esc(s.tag)}</span>` : ''}</h2>`;
+  const h = `<h2 class="sh">${esc(s.h)}</h2>`;
   const antTabs = ants.length > 1 ? tabs('data-alt', ants.map((a, j) => [`invit-ant:${j}`, `對經${'一二三四'[j]}`]), `invit-ant:${ai}`) : '';
   return `<section class="s-invit">${h}${antTabs}${tabs('data-inv', ['95', '100', '67', '24'].map((k) => [k, lab[k]]), S.inv)}${out.map((l) => renderLine(l, s)).join('')}${body.map((l) => l.startsWith('§') ? `<p class="ps">${esc(l.slice(1))}</p>` : l.startsWith('¶') ? `<p>${marks(l.slice(1))}</p>` : l.startsWith('¤') ? `<p class="epi">${esc(l.slice(1))}</p>` : renderLine(l, s)).join('')}</section>`;
 }
 
 // 誦讀一／二: only the label is red; the source that follows (恭讀 / 選讀 …) is black, same style as the line under the header
-function secHead(s, tag) {
+function secHead(s) {
   const m = (s.k === 'r1' || s.k === 'r2') && s.h && s.h.match(/^(誦讀[一二])[\s\u3000]+(.+)$/);
-  if (!m) return `<h2 class="sh">${esc(s.h)}${tag ? ` <span class="tag">${esc(tag)}</span>` : ''}</h2>`;
-  return `<h2 class="sh">${m[1]}${tag ? ` <span class="tag">${esc(tag)}</span>` : ''}</h2>` + (/^(恭讀|選讀|續讀)/.test(m[2]) ? `<p class="rd">${esc(m[2])}</p>` : `<p class="epi">${esc(m[2])}</p>`);
+  if (!m) return `<h2 class="sh">${esc(s.h)}</h2>`;
+  return `<h2 class="sh">${m[1]}</h2>` + (/^(恭讀|選讀|續讀)/.test(m[2]) ? `<p class="rd">${esc(m[2])}</p>` : `<p class="epi">${esc(m[2])}</p>`);
 }
 
 function renderSection(s, hour) {
@@ -141,7 +142,7 @@ function renderSection(s, hour) {
   if (s.alts && s.alts.length > 1) {      // alternative texts (e.g. hymns from the commission and the three volumes)
     const key = `${hour}${s.k}${hour === '2' && s.k === 'psalmody' ? '-' + S.sub : ''}`; const i = Math.min(S.alt[key] || 0, s.alts.length - 1);
     const a = s.alts[i];
-    const h = `<h2 class="sh">${esc(s.h)}${a.tag ? ` <span class="tag">${esc(a.tag)}</span>` : ''}</h2>`;
+    const h = `<h2 class="sh">${esc(s.h)}</h2>`;
     return `<section class="s-${s.k}">${h}${tabs('data-alt', s.alts.map((x, j) => [`${key}:${j}`, x.label]), `${key}:${i}`)}${renderLines(a.lines, s)}</section>`;
   }
   if (s.k === 'bio') return `<section class="bio"><h2 class="sh">${esc(s.h)}</h2>${s.lines.map((l) => `<p>${esc(l)}</p>`).join('')}</section>`;
@@ -152,7 +153,7 @@ function renderSection(s, hour) {
     const pick = blocks.find((b) => b.h.startsWith(S.sub)) || blocks[0];
     lines = pick ? pick.l : lines;
   }
-  const h = s.h && !/^(午前|午時|午後)/.test(s.h) ? secHead(s, s.tag) : '';
+  const h = s.h && !/^(午前|午時|午後)/.test(s.h) ? secHead(s) : '';
   return `<section class="s-${s.k}">${h}${renderLines(lines, s)}</section>`;
 }
 
@@ -194,9 +195,9 @@ function render() {
   const fv = /第一(晚禱|夜禱)/.test(r.title);
   const head = fv ? r.title.replace(/^[^　\s]*月[^　\s]*日[　\s]*/, '').replace(/（聖詠集[^）]*）/g, '').trim() : hourName;
   let html = fv ? `<h1>${esc(head)}</h1>` : '';   // the hour itself is already the selected tab
-  const warnings = completenessWarnings(r);
+  const warnings = [...new Set(completenessWarnings(r).map(displayNotice).filter(Boolean))];
   if (warnings.length) html += `<div class="completeness" role="note" aria-label="經文完整性提示">${warnings.map((n) => `<p>${esc(n)}</p>`).join('')}</div>`;
-  const notes = r.notes.filter((n) => !isCompletenessWarning(n));
+  const notes = r.notes.filter((n) => !isCompletenessWarning(n)).map(displayNotice).filter(Boolean);
   if (notes.length) html += `<div class="notes">${notes.map((n) => `<p>${esc(n)}</p>`).join('')}</div>`;
   // the invitatory opens the day's prayer (GILH 35); wording of the rubric after 《每日頌禱》:「如念序經，則省去此開端詞」
   if (S.hour === '4' || S.hour === '1') html += `<p class="rub firsthour">如本時辰是一日的第一個祈禱，先念<a href="#" data-goto="0">序經</a>；如念序經，則省去此開端詞。</p>`;
@@ -231,10 +232,8 @@ function applyPrefs() {
   const root = document.documentElement;
   root.style.setProperty('--fs', store.get('fs', 19) + 'px');
   const th = store.get('theme', null); if (th) root.dataset.theme = th; else delete root.dataset.theme;
-  document.body.classList.toggle('norubrics', !store.get('rubrics', true));
-  $('#rubrics').checked = store.get('rubrics', true);
   document.querySelectorAll('[data-amen]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.amen === store.get('amen', 'auto')));
-  if ($('#showWelcome')) $('#showWelcome').checked = !store.get('skipWelcome', false);
+  if ($('#showWelcome')) $('#showWelcome').setAttribute('aria-checked', String(!store.get('skipWelcome', false)));
   document.querySelectorAll('[data-theme]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.theme === (th || '')));
   document.querySelectorAll('[data-script]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.script === store.get('script', 't')));
   const ft = store.get('font', 'ming'); if (ft === 'ming') delete root.dataset.font; else root.dataset.font = ft;
@@ -276,8 +275,7 @@ async function main() {
   document.querySelectorAll('[data-fs]').forEach((b) => b.onclick = () => { store.set('fs', Math.max(14, Math.min(30, store.get('fs', 19) + Number(b.dataset.fs)))); applyPrefs(); });
   document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { store.set('theme', b.dataset.theme); applyPrefs(); });
   document.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { store.set('font', b.dataset.font); applyPrefs(); });
-  $('#showWelcome').onchange = (e) => { store.set('skipWelcome', !e.target.checked); };
-  $('#rubrics').onchange = (e) => { store.set('rubrics', e.target.checked); applyPrefs(); };
+  bindWelcomeSetting($('#showWelcome'), store);
   document.querySelectorAll('[data-amen]').forEach((b) => b.onclick = () => { store.set('amen', b.dataset.amen); applyPrefs(); render(); });
   document.addEventListener('keydown', (e) => { if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.target.closest('input, select, textarea, button, a, [contenteditable], [role=dialog]') || !$('#settings').hidden || !$('#welcome').hidden || document.querySelector('.tts-sheet:not([hidden])')) return; if (e.key === 'ArrowLeft') shift(-1); if (e.key === 'ArrowRight') shift(1); });
   window.addEventListener('hashchange', () => { parseHash(); render(); });
