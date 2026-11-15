@@ -316,7 +316,7 @@ function composeOffice(dateStr, hour, choiceId = '') {
     const alts = hy[`${T.season}|${T.psalter}|${T.wd}|${hour}`];
     const hs = pg.s.find((x) => x.k === 'hymn');
     if (alts && hs && hs.id) {
-      const ordered = [{ id: hs.id }, ...alts.filter((a) => a.id !== hs.id)].slice(0, 4);
+      const ordered = [{ id: hs.id }, ...alts.filter((a) => a.id !== hs.id)];
       if (ordered.length > 1) hs.alts = ordered.map((a, i) => ({ label: `讚美詩${'一二三四'[i]}`, lines: lines(a.id), tag: i ? (a.src || '') : '' }));
     }
   }
@@ -330,8 +330,25 @@ function composeOffice(dateStr, hour, choiceId = '') {
         if (sub) sub.forEach((x) => flat.push({ label: sec.alts.length > 1 ? `${x.label}${'一二三四'[i]}` : x.label, lines: x.lines, tag: a.tag }));
         else flat.push(a);
       });
-      sec.alts = flat.slice(0, 4);
+      sec.alts = flat;
     }
+    if (sec.k === 'hymn') {
+      if (hour === '4' && sec.tag === '禮儀委員會') sec.tag = '';
+      if (sec.alts) {
+        const seen = new Set();
+        sec.alts = sec.alts.filter((a) => {
+          if (hour === '4' && a.tag === '禮儀委員會') a.tag = '';
+          const key = hymnIdentity(a.lines);
+          if (seen.has(key)) return false;
+          seen.add(key); return true;
+        });
+        sec.alts = sec.alts.slice(0, 4);
+        if (sec.alts.length === 1) {
+          sec.lines = sec.alts[0].lines; sec.tag = sec.alts[0].tag; sec.alts = undefined;
+        }
+      }
+    }
+    if (hour === '2' && sec.k === 'psalmody') sec.complement = complementaryPsalmody(sec, T, pg);
     return sec;
   });
   return { title, sections, notes, choices };
@@ -390,3 +407,27 @@ export function splitOptions(k, lines, hour) {
 export const invitPsalms = () => (D && D.invit) || null;
 export function nearestArchiveDate() { const ks = Object.keys(D.days).sort(); return { first: ks[0], last: ks[ks.length - 1] }; }
 export { iso };
+
+// Ignore typography and line wrapping when comparing hymn choices; preserve displayed text.
+export const hymnIdentity = (text) => text.join('').normalize('NFKC').replace(/衆/g, '眾').replace(/[\p{P}\p{Z}\p{S}\s]/gu, '');
+
+function complementaryPsalmody(sec, temporal, pg) {
+  // Some archived proper psalm sets are embedded after the preceding conclusion.
+  const proper = {}; let active = '';
+  for (const section of pg.s) for (const line of section.lines || lines(section.id)) {
+    const marker = line.match(/^(?:§|[（(])?(午前|午時|午後)(?:[）)\s]|$)/);
+    if (marker) active = marker[1];
+    if (active && /^對經[^：:]*[：:]/.test(line)) (proper[active] ||= []).push(line);
+  }
+  const result = {};
+  for (const sub of ['午前', '午時', '午後']) {
+    const body = lines(`complement-${sub}`);
+    if (!body.length) continue;
+    // Seasonal/proper antiphons enclose all three psalms, as in the source rubric.
+    const ants = proper[sub]?.length ? proper[sub] : sec.lines.filter((l) => /^對經[^：:]*[：:]/.test(l));
+    const shared = ants.length && new Set(ants.map((l) => l.replace(/^對經[^：:]*[：:]/, ''))).size === 1;
+    result[sub] = shared ? [ants[0], ...body.filter((l) => !/^對經/.test(l)), ants[ants.length - 1]]
+      : temporal.season === 'easter' ? body.map((l) => /^對經/.test(l) ? '對經：阿肋路亞，阿肋路亞，阿肋路亞。' : l) : body;
+  }
+  return result;
+}

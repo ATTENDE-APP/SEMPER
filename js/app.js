@@ -3,7 +3,7 @@ import { loadData, office, dayInfo, HOURS, dateLabel, nearestArchiveDate, invitP
 import { fromIso, iso, WD } from './calendar.js';
 import { initTTS, stop as stopTTS } from './tts.js';
 
-const APP_VERSION = 'v60';   // keep in step with VERSION in sw.js
+const APP_VERSION = 'v62';   // keep in step with VERSION in sw.js
 const $ = (s) => document.querySelector(s);
 const store = { get(k, d) { try { const v = localStorage.getItem('rike.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('rike.' + k, JSON.stringify(v)); } catch {} } };
@@ -134,9 +134,12 @@ function secHead(s, tag) {
 
 function renderSection(s, hour) {
   if (hour === '2' && s.sub && s.sub !== S.sub) return '';
+  if (hour === '2' && s.k === 'psalmody' && s.complement?.[S.sub]) {
+    s = { ...s, alts: [{ label: '本日聖詠', lines: s.lines }, { label: '補充聖詠', lines: s.complement[S.sub] }] };
+  }
   if (s.k === 'invit') { const r = renderInvit(s); if (r) return r; }
   if (s.alts && s.alts.length > 1) {      // alternative texts (e.g. hymns from the commission and the three volumes)
-    const key = `${hour}${s.k}`; const i = Math.min(S.alt[key] || 0, s.alts.length - 1);
+    const key = `${hour}${s.k}${hour === '2' && s.k === 'psalmody' ? '-' + S.sub : ''}`; const i = Math.min(S.alt[key] || 0, s.alts.length - 1);
     const a = s.alts[i];
     const h = `<h2 class="sh">${esc(s.h)}${a.tag ? ` <span class="tag">${esc(a.tag)}</span>` : ''}</h2>`;
     return `<section class="s-${s.k}">${h}${tabs('data-alt', s.alts.map((x, j) => [`${key}:${j}`, x.label]), `${key}:${i}`)}${renderLines(a.lines, s)}</section>`;
@@ -238,11 +241,14 @@ function applyPrefs() {
   document.querySelectorAll('[data-font]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.font === ft));
 }
 function renderCalendars() {
-  const el = $('#calendars'); if (!el) return;
   const order = ['general', 'hk', 'mo', 'tw'];
-  el.innerHTML = calendarList().sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id)).map((c) => `<button class="pill" data-cal="${c.id}" aria-pressed="${c.id === currentCalendar()}">${esc(c.name)}</button>`).join('');
-  el.querySelectorAll('[data-cal]').forEach((b) => b.onclick = () => { store.set('cal', b.dataset.cal); setCalendar(b.dataset.cal); renderCalendars(); render(); });
-  zh(el);
+  const calendars = calendarList().sort((a, b) => order.indexOf(a.id) - order.indexOf(b.id));
+  for (const id of ['calendars', 'welcomeCalendars']) {
+    const el = $('#' + id); if (!el) continue;
+    el.innerHTML = calendars.map((c) => `<button class="pill" data-cal="${c.id}" aria-pressed="${c.id === currentCalendar()}">${esc(c.name)}</button>`).join('');
+    el.querySelectorAll('[data-cal]').forEach((b) => b.onclick = () => { store.set('cal', b.dataset.cal); setCalendar(b.dataset.cal); renderCalendars(); render(); $('#' + id).querySelector(`[data-cal="${b.dataset.cal}"]`)?.focus(); });
+    zh(el);
+  }
 }
 
 async function main() {
@@ -278,15 +284,39 @@ async function main() {
   document.querySelectorAll('[data-script]').forEach((b) => b.onclick = async () => {
     const was = store.get('script', 't'); store.set('script', b.dataset.script); applyPrefs();
     if (was === b.dataset.script) return;
-    if (b.dataset.script === 't') { location.reload(); return; }   // back to 繁體: reload the original text
+    if (b.dataset.script === 't') { try { if (!$('#welcome').hidden) sessionStorage.setItem('rike.reopenWelcome', 'true'); } catch {} location.reload(); return; }   // back to 繁體: reload the original text
     await loadT2S(); zh(); });
   initTTS(store);
-  // welcome screen: stays until the reader has chosen 繁體／简体 (if wished) and taps 進入
-  // (with 「記住我的選擇」 it is not shown again; 設定 › 啟動時顯示歡迎畫面 turns it back on)
+  // Keep the existing skipWelcome preference; Settings can reopen the screen immediately.
   const W = $('#welcome');
-  const closeWelcome = () => { if (!W || W.hidden) return; store.set('welcomed', true); W.classList.add('out'); setTimeout(() => { W.hidden = true; if ($('#settings').hidden && !document.querySelector('.tts-sheet:not([hidden])')) $('#today').focus(); }, 400); };
-  if (store.get('skipWelcome', false)) W.hidden = true;
-  $('#welcomeGo').onclick = () => { if ($('#welcomeSkip').checked) { store.set('skipWelcome', true); applyPrefs(); } closeWelcome(); };
+  let welcomeTimer;
+  const welcomeBackground = (open) => {
+    document.body.classList.toggle('welcome-open', open);
+    for (const el of document.body.children) if (el !== W && el.tagName !== 'SCRIPT') el.inert = open;
+  };
+  const openWelcome = () => {
+    clearTimeout(welcomeTimer); document.documentElement.classList.remove('nowelcome');
+    W.hidden = false; W.classList.remove('out');
+    $('#welcomeSkip').checked = store.get('skipWelcome', false);
+    welcomeBackground(true); $('#welcomeTitle').focus();
+  };
+  const closeWelcome = () => {
+    store.set('welcomed', true); W.classList.add('out');
+    welcomeTimer = setTimeout(() => { W.hidden = true; welcomeBackground(false); $('#today').focus(); }, 400);
+  };
+  let reopen = false;
+  try { reopen = sessionStorage.getItem('rike.reopenWelcome') === 'true'; sessionStorage.removeItem('rike.reopenWelcome'); } catch {}
+  if (store.get('skipWelcome', false) && !reopen) W.hidden = true;
+  else openWelcome();
+  $('#welcomeGo').onclick = () => { store.set('skipWelcome', $('#welcomeSkip').checked); applyPrefs(); closeWelcome(); };
+  $('#openWelcome').onclick = () => { closeSettings(); stopTTS(); openWelcome(); };
+  W.addEventListener('keydown', (e) => {
+    if (e.key !== 'Tab') return;
+    const controls = [...W.querySelectorAll('button, input')].filter((el) => !el.disabled);
+    const first = controls[0], last = controls.at(-1);
+    if (e.shiftKey && (document.activeElement === first || document.activeElement === $('#welcomeTitle'))) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  });
   await Promise.all([loadData(), loadT2S()]);
   setCalendar(store.get('cal', 'hk'));
   dataReady = true;

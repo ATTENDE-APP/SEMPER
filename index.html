@@ -15,16 +15,18 @@
 <script>try { if (JSON.parse(localStorage.getItem('rike.skipWelcome'))) document.documentElement.classList.add('nowelcome'); } catch (e) {}</script>
 </head>
 <body>
-<div id="welcome" class="welcome">
+<div id="welcome" class="welcome" role="dialog" aria-modal="true" aria-labelledby="welcomeTitle">
   <div class="welcome-in">
-    <img src="icons/icon-512.png" alt="" class="welcome-logo">
-    <h1>SEMPER</h1>
-    <p class="welcome-zh">常頌</p>
-    <blockquote class="welcome-verse">「我要時時讚美上主，<br>我的口舌不斷讚頌上主。」<cite>聖詠 34:2</cite><span class="welcome-lat">SEMPER 是拉丁文，意即「常常」，出自這節聖詠。</span></blockquote>
-    <div class="welcome-script"><button data-script="t" class="pill">繁體字</button><button data-script="s" class="pill">简体字</button></div>
-    <label class="welcome-remember"><input type="checkbox" id="welcomeSkip"> 記住我的選擇，以後不再顯示此畫面</label>
-    <p class="welcome-note">此設定可隨時在「設定」中更改。</p>
-    <button id="welcomeGo" class="pill wide welcome-go">進入</button>
+    <h1 id="welcomeTitle" tabindex="-1">常頌<span>SEMPER</span></h1>
+    <p class="welcome-sub">時辰頌禱</p>
+    <blockquote class="welcome-verse">我要時時讚美上主，<br>我的口舌不斷讚頌上主。<cite>聖詠 34:2</cite></blockquote>
+    <div class="welcome-field"><p id="welcomeLanguageLabel">顯示語言</p>
+      <div class="welcome-script" role="group" aria-labelledby="welcomeLanguageLabel"><button data-script="t" class="pill">繁體中文</button><button data-script="s" class="pill">简体中文</button></div>
+    </div>
+    <div class="welcome-field"><p id="welcomeCalendarLabel">禮儀日曆</p><div id="welcomeCalendars" class="welcome-calendars" role="group" aria-labelledby="welcomeCalendarLabel"></div></div>
+    <label class="welcome-remember"><input type="checkbox" id="welcomeSkip"> 下次不再顯示此畫面</label>
+    <button id="welcomeGo" class="pill wide welcome-go">開始祈禱</button>
+    <p class="welcome-note">可在「設定」中重新開啟歡迎畫面。</p>
   </div>
 </div>
 <header class="top">
@@ -43,6 +45,7 @@
   <div class="sheet-in">
     <h2 id="settingsTitle" tabindex="-1">設定</h2>
     <p class="about"><b>SEMPER 常頌</b>　「我要時時讚美上主」（詠34:2）</p>
+    <p class="about">SEMPER 是拉丁文，意即「常常」，出自這節聖詠。</p>
     <div class="row"><span>禮儀日曆</span><span id="calendars" class="pills"></span></div>
     <div class="row"><span>文字</span><button data-script="t" class="pill">繁體字</button><button data-script="s" class="pill">简体字</button></div>
     <div class="row"><span>字型</span><span class="pills"><button data-font="ming" class="pill" style="font-family:SeptiesMing,serif">明體</button><button data-font="hei" class="pill" style="font-family:SeptiesHei,sans-serif">黑體</button><button data-font="kai" class="pill" style="font-family:SeptiesKai,serif">楷體</button><button data-font="sys" class="pill" style="font-family:system-ui,sans-serif">系統</button></span></div>
@@ -51,6 +54,7 @@
     <div class="row"><span>亞孟／阿們</span><span class="pills"><button data-amen="auto" class="pill">按日曆</button><button data-amen="亞孟" class="pill">亞孟</button><button data-amen="阿們" class="pill">阿們</button></span></div>
     <label class="row"><input type="checkbox" id="rubrics" checked> 顯示說明及經文來源</label>
     <label class="row"><input type="checkbox" id="showWelcome" checked> 啟動時顯示歡迎畫面</label>
+    <button id="openWelcome" class="pill">開啟歡迎畫面</button>
     <p class="about" id="buildInfo"></p>
     <p class="about" id="offlineStatus" role="status"></p>
     <div class="licence">
