@@ -4,7 +4,7 @@ import { fromIso, iso, WD } from './calendar.js';
 import { initTTS, stop as stopTTS } from './tts.js';
 
 const APP_VERSION = '1.0 (5)';   // Match iOS marketing version and build.
-const CONTENT_VERSION = 64;   // Internal data/cache revision; matches sw.js, never shown as the release name.
+const CONTENT_VERSION = 65;   // Internal data/cache revision; matches sw.js, never shown as the release name.
 const $ = (s) => document.querySelector(s);
 const store = { get(k, d) { try { const v = localStorage.getItem('rike.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('rike.' + k, JSON.stringify(v)); } catch {} } };
@@ -137,6 +137,10 @@ function renderSection(s, hour) {
   if (hour === '2' && s.sub && s.sub !== S.sub) return '';
   if (hour === '2' && s.k === 'psalmody' && s.complement?.[S.sub]) {
     s = { ...s, alts: [{ label: '本日聖詠', lines: s.lines }, { label: '補充聖詠', lines: s.complement[S.sub] }] };
+  }
+  if (hour === '2') {   // the source's heading for the next part (§午前, (午時)…) is left at the end of a section: drop it
+    const trim = (ls) => { const o = (ls || []).slice(); while (o.length && /^§?[（(]?(午前|午時|午後)[）)]?(\s*[（(][^）)]*[）)])?$/.test(o[o.length - 1])) o.pop(); return o; };
+    s = { ...s, lines: trim(s.lines), ...(s.alts ? { alts: s.alts.map((a) => ({ ...a, lines: trim(a.lines) })) } : {}) };
   }
   if (s.k === 'invit') { const r = renderInvit(s); if (r) return r; }
   if (s.alts && s.alts.length > 1) {      // alternative texts (e.g. hymns from the commission and the three volumes)
