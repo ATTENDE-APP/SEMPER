@@ -1,10 +1,10 @@
 import { displayNotice, bindWelcomeSetting, validDate, parseRoute, isCompletenessWarning, completenessWarnings } from './ui.js';
-import { loadData, office, dayInfo, HOURS, dateLabel, nearestArchiveDate, invitPsalms, setCalendar, calendarList, currentCalendar } from './office.js';
+import { loadData, office, dayInfo, HOURS, dateLabel, nearestArchiveDate, invitPsalms, setCalendar, calendarList, currentCalendar, userCommons, userCollect, setUserSaints } from './office.js';
 import { fromIso, iso, WD } from './calendar.js';
 import { initTTS, stop as stopTTS } from './tts.js';
 
-const APP_VERSION = '1.0 (5)';   // Match iOS marketing version and build.
-const CONTENT_VERSION = 65;   // Internal data/cache revision; matches sw.js, never shown as the release name.
+const APP_VERSION = '1.0 (6)';   // Match iOS marketing version and build.
+const CONTENT_VERSION = 66;   // Internal data/cache revision; matches sw.js, never shown as the release name.
 const $ = (s) => document.querySelector(s);
 const store = { get(k, d) { try { const v = localStorage.getItem('rike.' + k); return v === null ? d : JSON.parse(v); } catch { return d; } },
   set(k, v) { try { localStorage.setItem('rike.' + k, JSON.stringify(v)); } catch {} } };
@@ -14,7 +14,12 @@ function defaultHour() {
   const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hong_Kong', hour: 'numeric', hour12: false }).format(new Date()));
   if (h < 4) return '5'; if (h < 10) return '1'; if (h < 16) return '2'; if (h < 20) return '3'; return '5';
 }
-const S = { date: hkToday(), hour: defaultHour(), choice: {}, sub: store.get('sub', '午時'), inv: store.get('inv', '95'), alt: store.get('alt', {}) };
+// 日間祈禱: 午前 before noon, 午時 until 3 p.m., then 午後 (Hong Kong time); a tap changes it for this session only
+function defaultSub() {
+  const h = Number(new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Hong_Kong', hour: 'numeric', hour12: false }).format(new Date()));
+  return h < 12 ? '午前' : h < 15 ? '午時' : '午後';
+}
+const S = { date: hkToday(), hour: defaultHour(), choice: {}, sub: defaultSub(), inv: store.get('inv', '95'), alt: store.get('alt', {}) };
 
 function parseHash() {
   const route = parseRoute(location.hash);
@@ -171,13 +176,17 @@ function renderCelebs(info) {
   const labOf = (c) => (c.kind === 'commemoration' ? '紀念' : c.kind === 'optional' ? '自由紀念' : ({ solemnity: '節日', feast: '慶日', memorial: '紀念' }[c.rank] || '平日'));
   const sel = info.choices.find((c) => c.id === cur) || info.choices[0];
   const selLab = labOf(sel) !== '平日' || info.choices.length > 1 ? labOf(sel) : '';
-  parts.push(`<h1 class="cel">${esc(sel.title)}${selLab ? `<span class="rank">${selLab}</span>` : ''}</h1>`);
+  const mine = (id) => MY.some((u) => u.id === id);
+  const myTag = (id) => (mine(id) ? '<span class="mytag">我的聖人</span>' : '');
+  parts.push(`<h1 class="cel">${esc(sel.title)}${selLab ? `<span class="rank">${selLab}</span>` : ''}${sel.kind === 'primary' ? myTag(info.L.primary.id) : ''}</h1>`);
   if (info.choices.length > 1) {
     parts.push(`<div class="opts" role="group" aria-label="今日可選"><div class="opts-lab">今日可選：</div>${info.choices.map((c) =>
-      `<button class="opt" data-c="${c.id}" aria-pressed="${c.id === cur}"><span class="dot" aria-hidden="true">${c.id === cur ? '◉' : '○'}</span><span>${esc(c.title)} <small>${labOf(c)}</small></span></button>`).join('')}</div>`);
+      `<button class="opt" data-c="${c.id}" aria-pressed="${c.id === cur}"><span class="dot" aria-hidden="true">${c.id === cur ? '◉' : '○'}</span><span>${esc(c.title)} <small>${labOf(c)}</small>${myTag(c.id)}</span></button>`).join('')}</div>`);
   }
+  parts.push(`<button class="addsaint" type="button">＋ 加入我的聖人…</button>`);
   el.innerHTML = parts.join('');
   el.querySelectorAll('button.opt').forEach((b) => b.onclick = () => { S.choice[S.date] = b.dataset.c; render(); });
+  el.querySelector('.addsaint').onclick = (e) => openSaintEditor(null, e.currentTarget);
 }
 
 let dataReady = false;
@@ -210,7 +219,7 @@ function render() {
   $('#office').innerHTML = html;
   $('#office').setAttribute('aria-busy', 'false');
   $('#office').querySelectorAll('[data-goto]').forEach((a) => a.onclick = (e) => { e.preventDefault(); S.hour = a.dataset.goto; render(); window.scrollTo(0, 0); });
-  $('#office').querySelectorAll('[data-sub]').forEach((b) => b.onclick = () => { S.sub = b.dataset.sub; store.set('sub', S.sub); render(); });
+  $('#office').querySelectorAll('[data-sub]').forEach((b) => b.onclick = () => { S.sub = b.dataset.sub; render(); });
   $('#office').querySelectorAll('[data-inv]').forEach((b) => b.onclick = () => { S.inv = b.dataset.inv; store.set('inv', S.inv); render(); });
   $('#office').querySelectorAll('[data-alt]').forEach((b) => b.onclick = () => { const [k, i] = b.dataset.alt.split(':'); S.alt[k] = +i; store.set('alt', S.alt); render(); });
   setHash();
@@ -238,7 +247,7 @@ function applyPrefs() {
   const th = store.get('theme', null); if (th) root.dataset.theme = th; else delete root.dataset.theme;
   document.querySelectorAll('[data-amen]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.amen === store.get('amen', 'auto')));
   if ($('#showWelcome')) $('#showWelcome').setAttribute('aria-checked', String(!store.get('skipWelcome', false)));
-  document.querySelectorAll('[data-theme]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.theme === (th || '')));
+  document.querySelectorAll('button[data-theme]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.theme === (th || '')));
   document.querySelectorAll('[data-script]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.script === store.get('script', 't')));
   const ft = store.get('font', 'ming'); if (ft === 'ming') delete root.dataset.font; else root.dataset.font = ft;
   document.querySelectorAll('[data-font]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.font === ft));
@@ -254,6 +263,227 @@ function renderCalendars() {
   }
 }
 
+// ---------- sheets (settings, month calendar, saint editor): focus kept inside, Esc or a tap outside closes ----------
+const sheetOpener = new Map();
+function openSheet(el, focusEl, opener = document.activeElement) {
+  sheetOpener.set(el, opener);
+  el.hidden = false; document.body.classList.add('settings-open');
+  if (!el.dataset.bound) {
+    el.dataset.bound = '1';
+    el.addEventListener('click', (e) => { if (e.target === el) closeSheet(el); });
+    el.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeSheet(el); return; }
+      if (e.key !== 'Tab') return;
+      const f = [...el.querySelectorAll('button, input, select, textarea, a[href]')].filter((x) => !x.disabled && x.getClientRects().length);
+      const first = f[0], last = f.at(-1);
+      if (e.shiftKey && (document.activeElement === first || !el.contains(document.activeElement) || document.activeElement.tabIndex < 0)) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    });
+  }
+  (focusEl || el).focus();
+}
+function closeSheet(el, refocus = true) {
+  el.hidden = true;
+  if (!document.querySelector('.sheet:not([hidden])')) document.body.classList.remove('settings-open');
+  const o = sheetOpener.get(el); sheetOpener.delete(el);
+  if (refocus && o && o.isConnected) o.focus();
+}
+
+// ---------- liturgical colour of a day (month calendar) ----------
+// w white, r red, g green, v violet, p rose
+function colourOf(info, choiceId) {
+  const L = info.L, T = L.temporal;
+  const sel = info.choices.find((c) => c.id === choiceId && c.kind === 'optional');
+  const p = sel || L.primary;
+  if (p.source === 'temporal' || p.source === 'movable') {
+    if (['palm', 'goodfriday', 'pentecost'].includes(T.key)) return 'r';
+    if (T.key === 'adv3-0' || T.key === 'lent4-0') return 'p';
+    if (p.source === 'movable' || T.rank || T.key === 'holy-4') return 'w';
+    if (T.season === 'adv' || T.season === 'lent' || T.season === 'tri') return 'v';
+    return T.season === 'ot' ? 'g' : 'w';
+  }
+  if (p.rank === 'allsouls') return 'v';
+  const cs = Array.isArray(p.common) ? p.common.join() : (p.common || '');
+  if (/殉道/.test(cs)) return 'r';
+  if (/殉道|十字聖架|聖神/.test(p.title) || (/宗徒|聖史/.test(p.title) && !/若望宗徒|若望聖史|宗座|歸化|聖母/.test(p.title))) return 'r';
+  return 'w';
+}
+
+// ---------- month calendar ----------
+let mCur = [2026, 1];
+function openMonth(opener) {
+  const [y, m] = S.date.split('-').map(Number); mCur = [y, m];
+  renderMonth(); openSheet($('#month'), $('#monthGrid').querySelector('.sel') || $('#monthTitle'), opener);
+}
+function renderMonth() {
+  const [y, m] = mCur;
+  $('#monthTitle').textContent = `${y}年${m}月`;
+  const startDow = new Date(Date.UTC(y, m - 1, 1)).getUTCDay(), days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const today = hkToday();
+  let html = '日一二三四五六'.split('').map((x, i) => `<div class="mh${i ? '' : ' sun'}" aria-hidden="true">${x}</div>`).join('');
+  for (let i = 0; i < startDow; i++) html += '<div></div>';
+  for (let d = 1; d <= days; d++) {
+    const date = `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    if (!validDate(date)) { html += '<div></div>'; continue; }
+    const info = dayInfo(date), cur = S.choice[date] || '';
+    const sel = info.choices.find((c) => c.id === cur) || info.choices[0];
+    const opt = info.choices.length > 1;
+    const dow = (startDow + d - 1) % 7;
+    html += `<button data-d="${date}" class="${date === S.date ? 'sel' : ''}${date === today ? ' today' : ''}${dow === 0 ? ' sun' : ''}" style="--c:var(--lc-${colourOf(info, cur)})" aria-label="${m}月${d}日 ${esc(sel.title)}${opt ? '（可選自由紀念）' : ''}"${date === S.date ? ' aria-current="date"' : ''}><span class="dn">${d}</span><span class="bar"></span>${opt ? '<span class="dot"></span>' : '<span class="nodot"></span>'}</button>`;
+  }
+  $('#monthGrid').innerHTML = html;
+  $('#datePick').value = S.date;
+  $('#monthGrid').querySelectorAll('button[data-d]').forEach((b) => b.onclick = () => { goDate(b.dataset.d); });
+  zh($('#month'));
+}
+function goDate(date, hour) {
+  if (!validDate(date)) return;
+  S.date = date; if (hour) S.hour = hour;
+  closeSheet($('#month'), false); render(); window.scrollTo(0, 0); $('#dateBtn').focus();
+}
+function initMonth() {
+  const step = (n) => { let [y, m] = mCur; m += n; if (m < 1) { m = 12; y--; } if (m > 12) { m = 1; y++; } if (y < 100 || y > 9998) return; mCur = [y, m]; renderMonth(); };
+  $('#mPrev').onclick = () => step(-1);
+  $('#mNext').onclick = () => step(1);
+  $('#mToday').onclick = () => { S.sub = defaultSub(); goDate(hkToday(), defaultHour()); };
+  $('#mClose').onclick = () => closeSheet($('#month'));
+  $('#datePick').onchange = (e) => { if (validDate(e.target.value)) goDate(e.target.value); };
+  let x0 = null;   // swipe left/right to change month
+  $('#monthGrid').addEventListener('touchstart', (e) => { x0 = e.touches[0].clientX; }, { passive: true });
+  $('#monthGrid').addEventListener('touchend', (e) => { if (x0 === null) return; const dx = e.changedTouches[0].clientX - x0; x0 = null; if (Math.abs(dx) > 60) step(dx < 0 ? 1 : -1); });
+}
+
+// ---------- 我的聖人 (the reader's own saints; stored on the device under rike.mysaints) ----------
+let MY = [];
+const RANKS = { optional: '自由紀念', memorial: '紀念', feast: '慶日' };
+function loadMySaints() { const a = store.get('mysaints', []); return Array.isArray(a) ? a.filter((u) => u && u.id && u.name && /^\d\d-\d\d$/.test(u.md)) : []; }
+function saveMySaints() { store.set('mysaints', MY); setUserSaints(MY); render(); renderMySaints(); }
+const mdLabel = (md) => { const [m, d] = md.split('-').map(Number); return `${m}月${d}日`; };
+const commonLabel = (id) => (userCommons().find((c) => c.id === id) || {}).label || '';
+function renderMySaints() {
+  const el = $('#mySaintsList'); if (!el) return;
+  const list = MY.slice().sort((a, b) => a.md.localeCompare(b.md) || a.name.localeCompare(b.name));
+  el.innerHTML = list.length ? `<ul class="mslist">${list.map((u) => `<li><button class="msitem" data-id="${esc(u.id)}"><span class="msn">${esc(u.name)}</span><span class="msd">${mdLabel(u.md)}・${RANKS[u.rank] || ''}・${esc(commonLabel(u.common))}通用</span><span class="msedit" aria-hidden="true">編輯 ›</span></button></li>`).join('')}</ul>`
+    : '<p class="about msnone">尚未加入聖人。可在每日標題下按「＋ 加入我的聖人…」，或按下面的「＋ 加入聖人」。需要的資料：名稱、日期、通用部分、等級，以及禱詞中的名字。</p>';
+  el.querySelectorAll('.msitem').forEach((b) => b.onclick = () => openSaintEditor(MY.find((u) => u.id === b.dataset.id), b));
+  zh(el);
+}
+// 「聖博德主教」→「博德」: the name as it goes into 「聖{N}…」
+const oNameFrom = (n) => (n || '').replace(/[（(].*$/, '').replace(/^(聖女|聖婦|聖|真福)/, '').replace(/(及同伴|主教|教宗|司鐸|神父|院長|執事|會士|貞女|殉道|聖師|童貞)+$/, '').trim();
+let ED = null;   // saint being edited: { u (existing or null), rank, collect, oAuto, opener }
+function fillDays() {
+  const m = +$('#sMonth').value, cur = +$('#sDay').value || 1, n = [31, 29, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][m - 1];
+  $('#sDay').innerHTML = Array.from({ length: n }, (_, i) => `<option value="${i + 1}">${i + 1}日</option>`).join('');
+  $('#sDay').value = String(Math.min(cur, n));
+}
+function renderCollects() {
+  const c = userCommons().find((x) => x.id === $('#sCommon').value);
+  const name = $('#sOName').value.trim() || '○○';
+  const opts = (c ? c.collects : []).map((t, i) => [String(i), t.replace(/\{N\}/g, name)]);
+  const cur = ED.collect;
+  $('#sCollects').innerHTML = opts.map(([v, t]) => `<button class="col" role="radio" data-col="${v}" aria-checked="${cur === v}"><span class="radio" aria-hidden="true"></span><span>${esc(t)}</span></button>`).join('')
+    + `<button class="col" role="radio" data-col="own" aria-checked="${cur === 'own'}"><span class="radio" aria-hidden="true"></span><span>自行輸入禱詞</span></button>`
+    + `<textarea id="sCustom" rows="4" aria-label="自行輸入的結束禱詞" placeholder="例如聖人專用的集禱經"${cur === 'own' ? '' : ' hidden'}></textarea>`;
+  $('#sCustom').value = ED.custom || '';
+  $('#sCustom').oninput = (e) => { ED.custom = e.target.value; };
+  $('#sCollects').querySelectorAll('[data-col]').forEach((b) => b.onclick = () => { ED.collect = b.dataset.col; renderCollects(); if (ED.collect === 'own') $('#sCustom').focus(); });
+  zh($('#sCollects'));
+}
+function openSaintEditor(u, opener) {
+  const fromSettings = !$('#settings').hidden;
+  if (fromSettings) closeSheet($('#settings'), false);
+  fillCommons();
+  const md = u ? u.md : S.date.slice(5);
+  ED = { u: u || null, rank: u ? u.rank : 'optional', collect: u ? (u.custom ? 'own' : String(u.collect || 0)) : '0', custom: u ? (u.custom || '') : '', oAuto: !u, opener, fromSettings };
+  $('#saintEdTitle').textContent = u ? '編輯聖人' : '加入聖人';
+  $('#sName').value = u ? u.name : '';
+  $('#sMonth').value = String(+md.slice(0, 2)); $('#sDay').value = String(+md.slice(3)); fillDays(); $('#sDay').value = String(+md.slice(3));
+  $('#sCommon').value = u ? u.common : 'saint';
+  $('#sOName').value = u ? (u.oName || '') : '';
+  $('#sDelete').hidden = !u; $('#sMsg').hidden = true;
+  paintRank(); renderCollects(); zh($('#saintEd'));
+  openSheet($('#saintEd'), $('#saintEdTitle'), opener);
+}
+function paintRank() { $('#sRank').querySelectorAll('[data-rank]').forEach((b) => b.setAttribute('aria-pressed', b.dataset.rank === ED.rank)); }
+function closeSaintEditor() {
+  closeSheet($('#saintEd'), !ED.fromSettings);
+  if (ED.fromSettings) { renderMySaints(); openSheet($('#settings'), $('#settingsTitle'), sheetOpener.get($('#settings')) || $('#menuBtn')); }
+}
+// the Commons come with the data: filled the first time the editor opens
+function fillCommons() {
+  if ($('#sCommon').options.length) return;
+  const groups = [];
+  for (const c of userCommons()) { let g = groups.find((x) => x.g === c.group); if (!g) groups.push(g = { g: c.group, items: [] }); g.items.push(c); }
+  $('#sCommon').innerHTML = groups.map((g) => g.items.length > 1 || g.items[0].label !== g.g
+    ? `<optgroup label="${esc(g.g)}通用">${g.items.map((c) => `<option value="${c.id}">${esc(c.label)}</option>`).join('')}</optgroup>`
+    : `<option value="${g.items[0].id}">${esc(g.items[0].label)}</option>`).join('');
+  zh($('#sCommon'));
+}
+function initSaintEditor() {
+  $('#sMonth').innerHTML = Array.from({ length: 12 }, (_, i) => `<option value="${i + 1}">${i + 1}月</option>`).join('');
+  $('#sMonth').onchange = fillDays;
+  $('#sCommon').onchange = () => { if (ED.collect !== 'own') ED.collect = '0'; renderCollects(); };
+  $('#sName').oninput = () => { if (ED.oAuto) { $('#sOName').value = oNameFrom($('#sName').value); renderCollects(); } };
+  $('#sOName').oninput = () => { ED.oAuto = false; renderCollects(); };
+  $('#sRank').querySelectorAll('[data-rank]').forEach((b) => b.onclick = () => { ED.rank = b.dataset.rank; paintRank(); });
+  $('#sCancel').onclick = closeSaintEditor;
+  $('#sDelete').onclick = () => {
+    if (!ED.u) return;
+    if (!$('#sDelete').dataset.confirm) { $('#sDelete').dataset.confirm = '1'; $('#sDelete').textContent = '確定刪除？'; setTimeout(() => { delete $('#sDelete').dataset.confirm; $('#sDelete').textContent = '刪除'; zh($('#sDelete')); }, 4000); zh($('#sDelete')); return; }
+    delete $('#sDelete').dataset.confirm; $('#sDelete').textContent = '刪除';
+    MY = MY.filter((x) => x.id !== ED.u.id); saveMySaints(); closeSaintEditor();
+  };
+  $('#sSave').onclick = () => {
+    const name = $('#sName').value.trim();
+    const msg = (t) => { $('#sMsg').textContent = t; $('#sMsg').hidden = false; zh($('#sMsg')); };
+    if (!name) { msg('請輸入聖人的名稱。'); $('#sName').focus(); return; }
+    if (ED.collect === 'own' && !(ED.custom || '').trim()) { msg('請輸入結束禱詞，或選擇通用部分的禱詞。'); $('#sCustom').focus(); return; }
+    const md = `${String($('#sMonth').value).padStart(2, '0')}-${String($('#sDay').value).padStart(2, '0')}`;
+    const u = { id: ED.u ? ED.u.id : 'u' + Date.now().toString(36), name, md, common: $('#sCommon').value, rank: ED.rank,
+      oName: $('#sOName').value.trim() || oNameFrom(name), ...(ED.collect === 'own' ? { custom: ED.custom.trim() } : { collect: +ED.collect }) };
+    MY = [...MY.filter((x) => x.id !== u.id), u];
+    saveMySaints(); closeSaintEditor();
+  };
+  // 匯出／匯入: a small JSON file, to move the list to another phone or share it (e.g. the saints of a religious family)
+  const note = (t) => { $('#msMsg').textContent = t; zh($('#msMsg')); };
+  $('#msExport').onclick = async () => {
+    if (!MY.length) { note('尚未加入聖人，沒有可匯出的內容。'); return; }
+    const text = JSON.stringify({ app: 'SEMPER 常頌', kind: 'mysaints', v: 1, saints: MY }, null, 1);
+    const fname = '常頌-我的聖人.json';
+    try {
+      const file = new File([text], fname, { type: 'application/json' });
+      if (navigator.canShare && navigator.canShare({ files: [file] })) { await navigator.share({ files: [file], title: '常頌：我的聖人' }); note('已匯出。'); return; }
+    } catch (e) { if (e && e.name === 'AbortError') return; }
+    let copied = false;
+    try { await navigator.clipboard.writeText(text); copied = true; } catch {}
+    try { const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob([text], { type: 'application/json' })); a.download = fname; document.body.append(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 5000); } catch {}
+    note(copied ? '已下載檔案，並已複製到剪貼簿：可在另一部裝置的「匯入」貼上。' : '已下載檔案。');
+  };
+  $('#msImport').onclick = () => { $('#msPaste').hidden = !$('#msPaste').hidden; if (!$('#msPaste').hidden) $('#msText').focus(); };
+  $('#msFileBtn').onclick = () => $('#msFile').click();
+  const importText = (text) => {
+    let data; try { data = JSON.parse(text); } catch { note('未能讀取：內容不是由「匯出」產生的。'); return; }
+    const list = Array.isArray(data) ? data : data && Array.isArray(data.saints) ? data.saints : null;
+    if (!list) { note('未能讀取：內容不是由「匯出」產生的。'); return; }
+    const ids = new Set(userCommons().map((c) => c.id));
+    let n = 0, skip = 0;
+    for (const x of list) {
+      if (!x || typeof x.name !== 'string' || !/^\d\d-\d\d$/.test(x.md || '') || !RANKS[x.rank] || (!ids.has(x.common) && !x.custom)) { skip++; continue; }
+      if (MY.some((u) => u.name === x.name && u.md === x.md)) { skip++; continue; }
+      const u = { id: MY.some((v) => v.id === x.id) || !/^u[\w]+$/.test(x.id || '') ? 'u' + (Date.now() + n).toString(36) : x.id, name: x.name.slice(0, 80), md: x.md,
+        common: ids.has(x.common) ? x.common : 'saint', rank: x.rank, oName: String(x.oName || oNameFrom(x.name)).slice(0, 40),
+        ...(x.custom ? { custom: String(x.custom).slice(0, 2000) } : { collect: Math.max(0, +x.collect || 0) }) };
+      MY.push(u); n++;
+    }
+    if (n) saveMySaints();
+    note(`已匯入 ${n} 位聖人${skip ? `（${skip} 項已存在或未能讀取，已略過）` : ''}。`);
+    if (n) { $('#msPaste').hidden = true; $('#msText').value = ''; }
+  };
+  $('#msPasteGo').onclick = () => importText($('#msText').value);
+  $('#msFile').onchange = async (e) => { const f = e.target.files && e.target.files[0]; if (f) importText(await f.text()); e.target.value = ''; };
+  $('#msAdd').onclick = (e) => openSaintEditor(null, e.currentTarget);
+}
+
 async function main() {
   parseHash();
   applyPrefs();
@@ -261,27 +491,18 @@ async function main() {
   try { for (const key of ['audioUsed', 'audioClean', 'audioRange']) localStorage.removeItem('rike.' + key); } catch {}
   $('#prev').onclick = () => shift(-1);
   $('#next').onclick = () => shift(1);
-  $('#today').onclick = () => { S.date = hkToday(); S.hour = defaultHour(); render(); };
-  $('#datePick').onchange = (e) => { if (validDate(e.target.value)) { S.date = e.target.value; render(); } };
-  let settingsFocus;
-  const closeSettings = () => { $('#settings').hidden = true; document.body.classList.remove('settings-open'); settingsFocus?.focus(); };
-  $('#menuBtn').onclick = () => { settingsFocus = document.activeElement; $('#settings').hidden = false; document.body.classList.add('settings-open'); $('#settingsTitle').focus(); };
+  $('#dateBtn').onclick = (e) => openMonth(e.currentTarget);
+  initMonth();
+  initSaintEditor();
+  const closeSettings = () => closeSheet($('#settings'));
+  $('#menuBtn').onclick = (e) => { renderMySaints(); openSheet($('#settings'), $('#settingsTitle'), e.currentTarget); };
   $('#closeSettings').onclick = closeSettings;
-  $('#settings').onclick = (e) => { if (e.target.id === 'settings') closeSettings(); };
-  $('#settings').addEventListener('keydown', (e) => {
-    if (e.key === 'Escape') { e.preventDefault(); closeSettings(); }
-    if (e.key !== 'Tab') return;
-    const focusable = [...$('#settings').querySelectorAll('button, input, select, a[href]')].filter((el) => !el.disabled && el.getClientRects().length);
-    const first = focusable[0], last = focusable.at(-1);
-    if (e.shiftKey && (document.activeElement === first || document.activeElement === $('#settingsTitle'))) { e.preventDefault(); last.focus(); }
-    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
-  });
   document.querySelectorAll('[data-fs]').forEach((b) => b.onclick = () => { store.set('fs', Math.max(14, Math.min(30, store.get('fs', 19) + Number(b.dataset.fs)))); applyPrefs(); });
-  document.querySelectorAll('[data-theme]').forEach((b) => b.onclick = () => { store.set('theme', b.dataset.theme); applyPrefs(); });
+  document.querySelectorAll('button[data-theme]').forEach((b) => b.onclick = () => { store.set('theme', b.dataset.theme || null); applyPrefs(); });   // 自動 = follow the device
   document.querySelectorAll('[data-font]').forEach((b) => b.onclick = () => { store.set('font', b.dataset.font); applyPrefs(); });
   bindWelcomeSetting($('#showWelcome'), store);
   document.querySelectorAll('[data-amen]').forEach((b) => b.onclick = () => { store.set('amen', b.dataset.amen); applyPrefs(); render(); });
-  document.addEventListener('keydown', (e) => { if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.target.closest('input, select, textarea, button, a, [contenteditable], [role=dialog]') || !$('#settings').hidden || !$('#welcome').hidden || document.querySelector('.tts-sheet:not([hidden])')) return; if (e.key === 'ArrowLeft') shift(-1); if (e.key === 'ArrowRight') shift(1); });
+  document.addEventListener('keydown', (e) => { if (e.defaultPrevented || e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || e.target.closest('input, select, textarea, button, a, [contenteditable], [role=dialog]') || document.querySelector('.sheet:not([hidden])') || !$('#welcome').hidden || document.querySelector('.tts-sheet:not([hidden])')) return; if (e.key === 'ArrowLeft') shift(-1); if (e.key === 'ArrowRight') shift(1); });
   window.addEventListener('hashchange', () => { parseHash(); render(); });
   document.querySelectorAll('[data-script]').forEach((b) => b.onclick = async () => {
     const was = store.get('script', 't'); store.set('script', b.dataset.script); applyPrefs();
@@ -304,7 +525,7 @@ async function main() {
   };
   const closeWelcome = () => {
     store.set('welcomed', true); W.classList.add('out');
-    welcomeTimer = setTimeout(() => { W.hidden = true; welcomeBackground(false); $('#today').focus(); }, 400);
+    welcomeTimer = setTimeout(() => { W.hidden = true; welcomeBackground(false); $('#dateBtn').focus(); }, 400);
   };
   let reopen = false;
   try { reopen = sessionStorage.getItem('rike.reopenWelcome') === 'true'; sessionStorage.removeItem('rike.reopenWelcome'); } catch {}
@@ -321,6 +542,7 @@ async function main() {
   });
   await Promise.all([loadData(), loadT2S()]);
   setCalendar(store.get('cal', 'hk'));
+  MY = loadMySaints(); setUserSaints(MY);
   dataReady = true;
   renderCalendars();
   zh();

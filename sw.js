@@ -1,9 +1,9 @@
 // Service worker：全部經文離線可用。更新時請改 VERSION。
-const VERSION = 'rike-v65';
+const VERSION = 'rike-v66';
 const FONTS = 'fonts-v2';   // change only when the font files change
 const SHELL = ['./', 'index.html', 'css/app.css', 'js/app.js', 'js/ui.js', 'js/calendar.js', 'js/office.js', 'js/tts.js', 'manifest.webmanifest',
   'css/fonts.css', 'icons/icon-192.png', 'icons/icon-512.png', 'icons/apple-touch-icon.png', 'icons/icon-maskable-512.png',
-  'data/days.json', 'data/texts.json', 'data/santoral.json', 'data/propers.json', 'data/commons.json', 'data/index.json', 'data/invit.json', 'data/calendars.json', 'data/t2s.json', 'data/offices.json'];
+  'data/days.json', 'data/texts.json', 'data/santoral.json', 'data/propers.json', 'data/commons.json', 'data/index.json', 'data/invit.json', 'data/calendars.json', 'data/t2s.json', 'data/offices.json', 'data/mysaints.json'];
 // cache: 'reload' bypasses the browser's HTTP cache (GitHub Pages keeps files 10 minutes), so a new version never
 // stores old copies. Updates wait until the reader chooses to apply them.
 self.addEventListener('install', (e) => e.waitUntil(caches.open(VERSION)

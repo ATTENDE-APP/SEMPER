@@ -30,6 +30,8 @@ export async function loadData(base = 'data/') {
   try { D.invit = await get('invit.json'); } catch { D.invit = null; }
   try { D.calendars = await get('calendars.json'); } catch { D.calendars = null; }
   try { D.offices = await get('offices.json'); } catch { D.offices = {}; }   // proper offices not in the archive (build/build_offices.py)
+  try { D.mysaints = await get('mysaints.json'); } catch { D.mysaints = { commons: [] }; }   // Commons for 「我的聖人」 (build/build_mysaints.py)
+  D.user = D.user || []; D.userMd = new Set();
   setCalendar(D.calId || 'hk');
   return D;
 }
@@ -54,14 +56,40 @@ export function setCalendar(id) {
   };
   D.hkSant = hk ? build(hk) : D.santoral;
   D.sant = C ? build(C) : D.hkSant;
+  // 我的聖人: the reader's own saints, added to the chosen calendar (normal precedence applies)
+  if (D.user && D.user.length) {
+    D.sant = Object.fromEntries(Object.entries(D.sant).map(([k, v]) => [k, v.slice()]));
+    for (const u of D.user) {
+      const c = userCommon(u.common);
+      (D.sant[u.md] ||= []).push({ id: u.id, title: u.name, rank: u.rank, common: c ? c.cs : ['聖人'], user: true });
+    }
+  }
+  D.userMd = new Set((D.user || []).map((u) => u.md));
   D.calOpts = C ? { ...C.rules, lny: D.calendars.lunarNewYear } : D.hkOpts;
+}
+// ---------- 我的聖人 (user-added saints) ----------
+export const userCommons = () => (D && D.mysaints ? D.mysaints.commons : []);
+const userCommon = (id) => userCommons().find((c) => c.id === id) || null;
+/** The collect for a user saint: a chosen Common collect with the name put in, or the reader's own text. */
+export function userCollect(u) {
+  if (u.custom && u.custom.trim()) return u.custom.trim();
+  const c = userCommon(u.common), t = c && c.collects[u.collect || 0];
+  return t ? t.replace(/\{N\}/g, u.oName || u.name || '') : '';
+}
+/** Install the reader's saints: [{id, name, md:'MM-DD', common, rank, oName, collect, custom}] */
+export function setUserSaints(list) {
+  if (!D) return;
+  for (const u of D.user || []) delete D.propers[u.id];
+  D.user = (list || []).filter((u) => u && u.id && /^\d\d-\d\d$/.test(u.md) && u.name);
+  for (const u of D.user) D.propers[u.id] = { collect: userCollect(u), user: true };
+  setCalendar(D.calId || 'hk');
 }
 export const calendarList = () => (D && D.calendars ? Object.entries(D.calendars.calendars).map(([id, c]) => ({ id, name: c.name })) : []);
 export const currentCalendar = () => D.calId;
 const LD = (date) => liturgicalDay(date, D.sant, D.calOpts);
 const primKey = (L) => { const p = L.primary; return `${p.source}|${p.source === 'temporal' || p.source === 'movable' ? L.temporal.key : p.id}|${p.rank}`; };
 /** May the archived (Hong Kong) page for this date be shown as is under the selected calendar? */
-const archiveFits = (dateStr, L) => D.calId === 'hk' || primKey(liturgicalDay(fromIso(dateStr), D.hkSant, D.hkOpts)) === primKey(L);
+const archiveFits = (dateStr, L) => (D.calId === 'hk' && !D.userMd.has(dateStr.slice(5))) || primKey(liturgicalDay(fromIso(dateStr), D.hkSant, D.hkOpts)) === primKey(L);
 
 const latest = (arr) => (arr && arr.length ? arr[arr.length - 1] : null);
 const page = (date, hour) => (date && D.days[date] ? D.days[date][hour] : null);
@@ -226,7 +254,7 @@ function composedTitle(dateStr, L, hour) {
 function overlaySaint(pg, entry, L, hour) {
   const P = D.propers[entry.id] || {};
   const collect = collectFor(entry.id, L);
-  const cs = D.index.c[entry.id] || (entry.common ? [entry.common] : ['聖人']);
+  const cs = D.index.c[entry.id] || (Array.isArray(entry.common) ? entry.common : entry.common ? [entry.common] : ['聖人']);
   const season = seasonOf(L);
   for (const key of SANCT[hour] || []) {
     if (key === 'oratio') {
@@ -236,6 +264,7 @@ function overlaySaint(pg, entry, L, hour) {
     }
     if (key === 'r2') {
       if (P.r2) replaceSection(pg.s, 'r2', { lines: P.r2, id: '', tag: '專用' });
+      else if (P.user) { const c = commonSection(cs, season, hour, 'r2'); if (c) replaceSection(pg.s, 'r2', { h: c.h, id: c.id, lines: undefined, tag: c.tag }); }   // 我的聖人: the Common's reading, else the weekday's
       else replaceSection(pg.s, 'r2', { tag: '專用誦讀尚未收錄：暫用平日' });
       continue;
     }

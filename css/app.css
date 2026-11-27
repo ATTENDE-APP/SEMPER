@@ -211,3 +211,70 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .welcome-setting-track::after { content: ''; display: block; width: 22px; height: 22px; border-radius: 50%; background: var(--bg); }
 .welcome-setting[aria-checked="true"] .welcome-setting-track { background: var(--accent); }
 .welcome-setting[aria-checked="true"] .welcome-setting-track::after { transform: translateX(18px); }
+
+/* 禮儀顏色（月曆） */
+:root { --lc-w: #c9a646; --lc-r: #b3261e; --lc-g: #2f7d3a; --lc-v: #6b3fa0; --lc-p: #d0789a; }
+:root[data-theme="dark"] { --lc-w: #d9bc63; --lc-r: #e0675c; --lc-g: #5fae68; --lc-v: #a27ad6; --lc-p: #e596b5; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme]) { --lc-w: #d9bc63; --lc-r: #e0675c; --lc-g: #5fae68; --lc-v: #a27ad6; --lc-p: #e596b5; } }
+/* 日期：按此打開月曆 */
+button.datebtn { font: inherit; font-weight: 600; color: var(--ink); min-height: 44px; border-radius: 20px; padding: 0 6px; }
+button.datebtn:active { background: var(--chip); }
+#dateLabel::after { content: ''; display: inline-block; width: 6px; height: 6px; margin-left: 7px; border-right: 1.6px solid var(--muted); border-bottom: 1.6px solid var(--muted); transform: translateY(-3px) rotate(45deg); }
+/* 月曆 */
+.month-in { font-family: system-ui, -apple-system, "PingFang TC", "Microsoft JhengHei", sans-serif; }
+.mhead { display: flex; align-items: center; justify-content: space-between; margin-bottom: 6px; }
+.mtitle { position: relative; flex: 1; text-align: center; font-size: 18px; font-weight: 700; color: var(--ink); min-height: 44px; display: grid; place-items: center; border-radius: 12px; }
+.mtitle:active { background: var(--chip); }
+#monthTitle:focus { outline: none; }
+.mtitle input { position: absolute; inset: 0; opacity: 0; width: 100%; cursor: pointer; }
+.mgrid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 2px; touch-action: pan-y; }
+.mgrid .mh { text-align: center; font-size: 12px; color: var(--muted); padding: 4px 0; }
+.mgrid .mh.sun, .mgrid button.sun .dn { color: var(--red); }
+.mgrid button { display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 6px 0 5px; border-radius: 10px; min-height: 52px; font-size: 16px; }
+.mgrid button:active { background: var(--chip); }
+.mgrid .dn { line-height: 1.2; font-variant-numeric: tabular-nums; }
+.mgrid .bar { width: 62%; height: 4px; border-radius: 2px; background: var(--c); }
+.mgrid .dot, .mgrid .nodot { width: 5px; height: 5px; border-radius: 50%; }
+.mgrid .dot { background: var(--ink); opacity: .55; }
+.mgrid button.today .dn { font-weight: 800; text-decoration: underline; text-underline-offset: 3px; }
+.mgrid button.sel { background: var(--chip); box-shadow: inset 0 0 0 1.5px var(--accent); }
+.mlegend { font-size: 12px; color: var(--muted); margin: 10px 0 2px; display: flex; align-items: center; gap: 5px; flex-wrap: wrap; }
+.mlegend .mdot { width: 5px; height: 5px; border-radius: 50%; background: var(--ink); opacity: .55; display: inline-block; }
+.mlegend .mbar { width: 16px; height: 4px; border-radius: 2px; background: linear-gradient(90deg, var(--lc-g) 25%, var(--lc-v) 25% 50%, var(--lc-w) 50% 75%, var(--lc-r) 75%); display: inline-block; margin-left: 6px; }
+.mfoot { display: flex; justify-content: space-between; margin-top: 10px; }
+.mfoot .pill { min-width: 6em; }
+.mtoday { color: var(--red); font-weight: 700; }
+/* 我的聖人 */
+.celebs .addsaint { font-size: 12.5px; color: var(--muted); padding: 2px 0; min-height: 32px; margin-top: 2px; }
+.celebs .addsaint:active { color: var(--accent); }
+.mytag { font-size: 11px; color: var(--accent); border: 1px solid currentColor; border-radius: 8px; padding: 0 5px; margin-left: 6px; font-weight: 400; vertical-align: 2px; white-space: nowrap; }
+.mysaints { margin: 16px 0 8px; padding-top: 10px; border-top: 1px solid var(--line); }
+.mysaints h3 { font-size: 16px; margin: 0 0 4px; color: var(--ink); }
+.mysaints .about { margin: 4px 0 8px; }
+.mslist { list-style: none; margin: 4px 0 10px; padding: 0; border: 1px solid var(--line); border-radius: 12px; overflow: hidden; }
+.mslist li + li { border-top: 1px solid var(--line); }
+.msitem { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; width: 100%; text-align: left; padding: 8px 12px; min-height: 52px; }
+.msitem:active { background: var(--chip); }
+.msn { font-weight: 600; }
+.msd { grid-row: 2; font-size: 13px; color: var(--muted); }
+.msedit { grid-row: 1 / span 2; grid-column: 2; align-self: center; font-size: 13px; color: var(--accent); }
+#msPaste textarea, #sCustom { width: 100%; font: inherit; font-size: 15px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; margin: 6px 0; }
+#msPaste[hidden], #sCustom[hidden] { display: none; }
+#msMsg:empty { display: none; }
+/* 聖人編輯 */
+.fld { display: flex; align-items: center; gap: 10px; margin: 10px 0; flex-wrap: wrap; }
+.fld > span:first-child { min-width: 6.5em; font-size: 15px; color: var(--muted); }
+.fld input[type=text], .fld select { flex: 1; min-width: 10em; font: inherit; font-size: 16px; color: var(--ink); background: var(--paper); border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; min-height: 44px; }
+.fld2 { display: flex; gap: 8px; flex: 1; }
+.fld2 select { min-width: 0 !important; }
+.fldcol { flex-direction: column; align-items: stretch; }
+.collects { display: flex; flex-direction: column; gap: 6px; max-height: 40vh; overflow-y: auto; }
+.col { display: flex; gap: 10px; align-items: flex-start; text-align: left; font-size: 15px; line-height: 1.55; border: 1px solid var(--line); border-radius: 10px; padding: 8px 10px; background: var(--paper); }
+.col[aria-checked="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.col .radio { flex: none; width: 16px; height: 16px; border-radius: 50%; border: 1.6px solid var(--muted); margin-top: 4px; }
+.col[aria-checked="true"] .radio { border: 5px solid var(--accent); }
+.edfoot { display: flex; gap: 8px; justify-content: flex-end; margin-top: 14px; }
+.edfoot .sdel { margin-right: auto; color: var(--red); }
+.savebtn { background: var(--accent); border-color: var(--accent); color: #fff; min-width: 6em; }
+#sMsg { color: var(--red); }
+#sMsg[hidden] { display: none; }

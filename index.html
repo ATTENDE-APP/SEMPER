@@ -32,9 +32,8 @@
 <header class="top">
   <div class="bar">
     <button id="prev" class="ic" aria-label="前一天">‹</button>
-    <label class="datebtn"><span id="dateLabel"></span><input id="datePick" type="date" aria-label="選擇日期"></label>
+    <button id="dateBtn" class="datebtn" aria-haspopup="dialog" aria-label="打開月曆"><span id="dateLabel"></span></button>
     <button id="next" class="ic" aria-label="後一天">›</button>
-    <button id="today" class="txt">今天</button>
     <button id="menuBtn" class="ic" aria-label="設定"><svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" aria-hidden="true"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/><circle cx="8" cy="6" r="2.4" fill="var(--bg, #fff)"/><circle cx="16" cy="12" r="2.4" fill="var(--bg, #fff)"/><circle cx="8" cy="18" r="2.4" fill="var(--bg, #fff)"/></svg></button>
   </div>
   <nav id="hours" class="hours" aria-label="時辰"></nav>
@@ -50,8 +49,17 @@
     <div class="row"><span>文字</span><button data-script="t" class="pill">繁體字</button><button data-script="s" class="pill">简体字</button></div>
     <div class="row"><span>字型</span><span class="pills"><button data-font="ming" class="pill" style="font-family:SeptiesMing,serif">明體</button><button data-font="hei" class="pill" style="font-family:SeptiesHei,sans-serif">黑體</button><button data-font="kai" class="pill" style="font-family:SeptiesKai,serif">楷體</button><button data-font="sys" class="pill" style="font-family:system-ui,sans-serif">系統</button></span></div>
     <div class="row"><span>字體大小</span><button data-fs="-1" class="pill">A−</button><button data-fs="1" class="pill">A＋</button></div>
-    <div class="row"><span>外觀</span><button data-theme="light" class="pill">日間</button><button data-theme="sepia" class="pill">米黃</button><button data-theme="dark" class="pill">夜間</button></div>
+    <div class="row"><span>外觀</span><button data-theme="" class="pill">自動</button><button data-theme="light" class="pill">日間</button><button data-theme="sepia" class="pill">米黃</button><button data-theme="dark" class="pill">夜間</button></div>
     <div class="row"><span>亞孟／阿們</span><span class="pills"><button data-amen="auto" class="pill">按日曆</button><button data-amen="亞孟" class="pill">亞孟</button><button data-amen="阿們" class="pill">阿們</button></span></div>
+    <div class="mysaints">
+      <h3>我的聖人</h3>
+      <p class="about">加入日曆上沒有的聖人，例如堂區或教區的主保、修會的聖人，或《羅馬殉道錄》中的聖人。按所選的通用部分及當日的聖詠集誦念，並依照禮儀日的優先次序：遇節日、慶日不念；在四旬期等日子只作紀念。資料只保存在本裝置，更新不會刪除。</p>
+      <div id="mySaintsList"></div>
+      <div class="pills"><button id="msAdd" class="pill">＋ 加入聖人</button><button id="msExport" class="pill">匯出</button><button id="msImport" class="pill">匯入</button></div>
+      <p class="about" id="msMsg" role="status"></p>
+      <div id="msPaste" hidden><textarea id="msText" rows="4" placeholder="把匯出的內容貼在這裏" aria-label="匯入內容"></textarea><div class="pills"><button id="msFileBtn" class="pill">選擇檔案…</button><button id="msPasteGo" class="pill">匯入貼上的內容</button></div></div>
+      <input type="file" id="msFile" accept="application/json,.json,text/plain" hidden>
+    </div>
     <button id="showWelcome" class="welcome-setting" type="button" role="switch" aria-checked="true"><span>啟動時顯示歡迎畫面</span><span class="welcome-setting-track" aria-hidden="true"></span></button>
     <button id="openWelcome" class="pill">開啟歡迎畫面</button>
     <p class="about" id="buildInfo"></p>
@@ -62,6 +70,28 @@
     <p class="about">聖經經文：思高聖經學會譯釋（《思高聖經》），經授權使用。</p>
     </div>
     <button id="closeSettings" class="pill wide">完成</button>
+  </div>
+</div>
+<div id="month" class="sheet" role="dialog" aria-modal="true" aria-labelledby="monthTitle" hidden>
+  <div class="sheet-in month-in">
+    <div class="mhead"><button id="mPrev" class="ic" aria-label="上一個月">‹</button><label class="mtitle"><span id="monthTitle" tabindex="-1"></span><input id="datePick" type="date" aria-label="跳到其他日期"></label><button id="mNext" class="ic" aria-label="下一個月">›</button></div>
+    <div id="monthGrid" class="mgrid" role="group" aria-label="本月日子"></div>
+    <p class="mlegend"><span class="mdot" aria-hidden="true"></span>當日可選自由紀念　<span class="mbar" aria-hidden="true"></span>禮儀顏色</p>
+    <div class="mfoot"><button id="mToday" class="pill mtoday">今天</button><button id="mClose" class="pill">關閉</button></div>
+  </div>
+</div>
+<div id="saintEd" class="sheet" role="dialog" aria-modal="true" aria-labelledby="saintEdTitle" hidden>
+  <div class="sheet-in">
+    <h2 id="saintEdTitle" tabindex="-1">加入聖人</h2>
+    <label class="fld"><span>名稱</span><input id="sName" type="text" placeholder="例如：聖博德主教" autocomplete="off"></label>
+    <div class="fld"><span>日期</span><span class="fld2"><select id="sMonth" aria-label="月"></select><select id="sDay" aria-label="日"></select></span></div>
+    <label class="fld"><span>通用部分</span><select id="sCommon"></select></label>
+    <p class="about">不清楚用哪一個通用部分，可參看該聖人的彌撒經書或《羅馬殉道錄》。</p>
+    <div class="fld"><span>等級</span><span class="pills" id="sRank"><button class="pill" data-rank="optional">自由紀念</button><button class="pill" data-rank="memorial">紀念</button><button class="pill" data-rank="feast">慶日</button></span></div>
+    <label class="fld"><span>禱詞中的名字</span><input id="sOName" type="text" placeholder="例如：博德" autocomplete="off"></label>
+    <div class="fld fldcol"><span>結束禱詞</span><div id="sCollects" class="collects" role="radiogroup" aria-label="結束禱詞"></div></div>
+    <p class="about" id="sMsg" role="alert" hidden></p>
+    <div class="edfoot"><button id="sDelete" class="pill sdel" hidden>刪除</button><button id="sCancel" class="pill">取消</button><button id="sSave" class="pill savebtn">儲存</button></div>
   </div>
 </div>
 <div id="update" class="update" hidden><button id="updateBtn">有新版本 — 按此更新</button></div>

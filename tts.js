@@ -17,6 +17,12 @@ function restart() {
   if (wait > 0) { const my = gen; tmr = setTimeout(() => { if (my === gen) speakNext(); }, wait); }
   else speakNext();
 }
+// Keep the screen on while reading: phones cut the device voice when the screen turns off.
+let wake = null;
+async function keepAwake() {
+  try { if ('wakeLock' in navigator && !wake && document.visibilityState === 'visible') { wake = await navigator.wakeLock.request('screen'); wake.addEventListener('release', () => { wake = null; }); } } catch { wake = null; }
+}
+function letSleep() { try { if (wake) wake.release(); } catch {} wake = null; }
 function halt() { gen++; clearTimeout(tmr); if (synth && (synth.speaking || synth.pending)) { synth.cancel(); cancelledAt = Date.now(); } live.clear(); }
 
 const speed = () => (SPEEDS[store.get('ttsSpeed', 'mid')] ? store.get('ttsSpeed', 'mid') : 'mid');
@@ -157,7 +163,7 @@ function speakWeb(u, my) {
 }
 
 export function stop() {
-  halt(); playing = false; paused = false; queue = []; pos = 0; marks = []; startAt = 0;
+  halt(); letSleep(); playing = false; paused = false; queue = []; pos = 0; marks = []; startAt = 0;
   document.querySelectorAll('#office .speaking').forEach((x) => x.classList.remove('speaking'));
   paint();
   if ($sheet && !$sheet.hidden) requestAnimationFrame(() => { if (!playing) { refresh(); paint(); } });   // the new text is on screen by then
@@ -166,14 +172,14 @@ function play() {
   if (!synth) { showMessage('此瀏覽器不支援裝置語音朗讀。'); return; }
   const lang = store.get('ttsLang', 'yue');
   if (!voiceFor(lang)) { noVoice(lang); return; }
-  if (paused) { paused = false; restart(); paint(); return; }
+  if (paused) { paused = false; keepAwake(); restart(); paint(); return; }
   if (!marks.length) refresh();
   if (!queue.length) return;
   pos = marks.length ? marks[startAt].i : 0; playing = true; paused = false;
   $sheet.querySelector('.tts-msg').hidden = true;
-  restart(); paint();
+  keepAwake(); restart(); paint();
 }
-function pause() { paused = true; halt(); paint(); }
+function pause() { paused = true; halt(); letSleep(); paint(); }
 function jump(d) {   // ⏮ / ⏭: previous / next start point
   if (!marks.length) refresh();
   if (!marks.length) return;
@@ -303,6 +309,19 @@ export function initTTS(st) {
     if (playing && !paused) { restart(); }
   });
   document.addEventListener('keydown', (e) => { if (e.key === 'Escape' && !$sheet.hidden) close(); });
+  // back from a locked screen or another app: keep the screen on again and go on from the same paragraph
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState !== 'visible' || !playing || paused) return;
+    keepAwake();
+    if (!synth || !(synth.speaking || synth.pending) || synth.paused) restart();
+  });
+  // while reading, a tap on a paragraph goes on from there
+  document.addEventListener('click', (e) => {
+    if (!playing || e.target.closest('button, a, select, input, textarea, .tabs, .tts, .tts-sheet')) return;
+    const p = e.target.closest('#office section > p'); if (!p) return;
+    const i = queue.findIndex((q) => q.els.includes(p)); if (i < 0) return;
+    pos = i; paused = false; keepAwake(); restart(); paint();
+  });
   document.body.classList.add('has-tts');
   paint();
 }
